@@ -1,0 +1,36 @@
+{
+  "packages": {
+    "crates/dotrc-core": {
+      "release-type": "rust",
+      "package-name": "dotrc-core",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": ["Cargo.toml"]
+    },
+    "crates/dotrc-core-wasm": {
+      "release-type": "rust",
+      "package-name": "dotrc-core-wasm",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": ["Cargo.toml"]
+    },
+    "crates/dotrc-server": {
+      "release-type": "rust",
+      "package-name": "dotrc-server",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": ["Cargo.toml"]
+    },
+    "apps/dotrc-worker": {
+      "release-type": "node",
+      "package-name": "dotrc-worker",
+      "changelog-path": "CHANGELOG.md"
+    }
+  },
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "chore", "section": "Miscellaneous", "hidden": false }
+  ]
+}
