@@ -1,0 +1,8 @@
+{
+  "name": "dotrc-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"TODO: scaffold web app (vite/next)\" && exit 0"
+  }
+}

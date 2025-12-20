@@ -1,0 +1,11 @@
+{
+  "name": "dotrc",
+  "private": true,
+  "packageManager": "pnpm@9",
+  "scripts": {
+    "lint": "echo \"TODO: add lint\" && exit 0",
+    "dev:worker": "pnpm --filter dotrc-worker dev",
+    "dev:web": "pnpm --filter dotrc-web dev",
+    "build:core": "echo \"TODO: build wasm core\" && exit 0"
+  }
+}

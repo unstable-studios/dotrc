@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/dotrc-core",
+  "crates/dotrc-core-wasm",
+  "crates/dotrc-server"
+]

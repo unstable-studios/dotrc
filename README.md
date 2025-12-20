@@ -1,157 +1,192 @@
-# DotRC Overview
+# dotrc Monorepo
 
-## **Core idea**
+DotRC is an append-only record system for logging immutable “dots” (facts) with explicit visibility and durable history.
+This repository contains the portable core engine and multiple runtime adapters.
 
-DotRC is an append-only system for logging small, immutable facts (“dots”) so you can prove something happened later without turning it into a workflow tool. It’s about evidence and recall, not management.
+```
+dotrc/
+├─ README.md
+├─ CONTRIBUTING.md
+├─ LICENSE
+├─ .gitignore
+├─ .editorconfig
+├─ .env.example
+├─ Cargo.toml # Rust workspace
+├─ package.json # JS workspace (pnpm)
+├─ pnpm-workspace.yaml
+├─ rust-toolchain.toml
+│
+├─ crates/
+│ ├─ dotrc-core/ # Pure domain / policy engine (Rust)
+│ │ ├─ README.md
+│ │ ├─ Cargo.toml
+│ │ └─ src/
+│ │ ├─ lib.rs
+│ │ ├─ types.rs # Dot, Link, ACL, IDs
+│ │ ├─ commands.rs # CreateDot, GrantAccess, etc.
+│ │ ├─ policy.rs # Visibility + auth rules
+│ │ ├─ normalize.rs # Validation & canonicalization
+│ │ └─ errors.rs
+│ │
+│ ├─ dotrc-core-wasm/ # WASM wrapper for Workers
+│ │ ├─ Cargo.toml
+│ │ └─ src/lib.rs
+│ │
+│ └─ dotrc-server/ # Self-hosted / enterprise runtime
+│ ├─ Cargo.toml
+│ └─ src/
+│ ├─ main.rs
+│ ├─ http/ # API layer
+│ ├─ storage/ # Postgres adapters
+│ └─ integrations/ # Slack, etc.
+│
+├─ apps/
+│ ├─ dotrc-worker/ # Cloudflare Workers (SaaS)
+│ │ ├─ wrangler.toml
+│ │ ├─ package.json
+│ │ └─ src/
+│ │ ├─ index.ts # Worker entrypoint
+│ │ ├─ api/ # HTTP routes
+│ │ ├─ slack/ # Slack events & commands
+│ │ ├─ storage/ # D1 / R2 adapters
+│ │ └─ core/ # WASM bindings
+│ │
+│ └─ dotrc-web/ # Web UI (optional)
+│ ├─ package.json
+│ └─ src/
+│
+├─ packages/
+│ └─ dotrc-sdk/ # TS client SDK (optional)
+│
+└─ docs/
+├─ overview.md # Product + mental model
+├─ core-architecture.md # Domain + policy rules
+├─ data-model.md
+└─ security.md
+```
 
-## **Dots**
+## Prerequisites
 
-A dot is a single, timestamped, immutable record with a title, optional body, attachments, tags (used sparingly), and metadata about who created it and where it came from. Dots are never edited or deleted. If something changes, you add a new dot.
+You do not need everything to get started. Pick a lane.
 
-## **Visibility & safety (ACLs)**
+### Required (always)
 
-Each dot captures a snapshot of who could see it at creation time (users and/or scopes). This snapshot never changes automatically, which prevents accidental exposure of sensitive information. If you want to share a dot later, you explicitly grant access via an append-only permission event—no cloning, no rewriting history.
+- Git
+- Rust (stable) `rustup install stable && rustup component add clippy rustfmt`
 
-## **Users & identity**
+- Node.js 18+
+- pnpm `npm install -g pnpm`
 
-Every user has an internal UUID. External services (Slack, future integrations) map to users via ExternalIdentity records. App-level connections to services live in Integrations (tokens, secrets, workspace IDs), keeping user identity separate from provider setup and making multi-tenancy sane.
+### Quick start options
 
-## **Scopes**
+#### Work on the core engine only (recommended first)
 
-A scope represents the context a dot was created in (Slack channel, project, team, private group, etc.). Scopes are future-proof abstractions, not Slack-specific. Visibility can reference scopes, but access is always resolved explicitly.
+No JS, no Workers, no Slack.
 
-## **Links (not chains)**
+```
+cd crates/dotrc-core
+cargo test
+```
 
-Dots are individually trustworthy. Relationships between dots are optional and explicit via directed links (followup, corrects, supersedes, related). Chains and trails are _derived views_, not enforced structures. Nothing requires a dot to be linked to exist.
+This validates:
 
-## **Superseding & corrections**
+- dot creation rules
+- ACL semantics
+- link behavior
+- immutability guarantees
 
-Instead of mutating a dot, newer dots can supersede or correct older ones using links. UIs may prefer the newest dot, but the full history always remains intact.
+Core has zero external dependencies.
 
-## **Attachments**
+#### Run the Cloudflare Worker (SaaS mode)
 
-Attachments are first-class: stored separately, hashed for integrity, and referenced by dots. This keeps receipts, screenshots, and docs durable and auditable.
+Setup
 
-## **Views**
+```
+cd apps/dotrc-worker
+pnpm install
+cp .env.example .env
+```
 
-Views (or trails) are saved queries and filters over dots—by scope, tag, links, user, time. They’re not core data structures; they’re perspectives.
+Required env vars:
 
-## **Architecture philosophy**
+- Slack app credentials (optional)
+- Cloudflare bindings (D1, R2)
+- Auth secrets
 
-The domain model (dots, visibility, links) is portable and integration-agnostic. Storage (D1/Postgres), ingestion (Slack/web/email), and UI are adapters on top. This keeps the core reusable for future tools or licensing.
+Run locally
 
-## **Bottom line**
+pnpm dev
 
-- Dots are facts, not tasks
-- History is append-only
-- Visibility is explicit and safe
-- Chains are optional, views are derived
-- Nothing disappears, nothing silently changes
+This starts:
 
-It’s Git-like where it matters (immutability, provenance), and intentionally boring everywhere else—which is exactly what you want for a system whose job is to remember things correctly.
+- local Worker
+- API endpoints
+- Slack event handling (if configured)
 
-# **dotrc-core Architecture Summary**
+#### Run the self-hosted server (enterprise mode)
 
-**dotrc-core** is a portable, pure domain/policy engine. It contains no I/O, no storage, no integrations, and no platform-specific logic. It defines _what is allowed_ and _what records should exist_, not _how_ they’re stored or fetched.
+```
+cd crates/dotrc-server
+cargo run
+```
 
-The core is designed to compile to both native Rust and WASM, and to be reused by:
+Requires:
 
-- dotrc-worker (Cloudflare Workers / SaaS)
-- dotrc-server (self-hosted / enterprise)
-- tests and future tools
+- Postgres
+- Object storage (S3-compatible)
+- Config via env vars or config file
 
-## **Core responsibilities**
+This binary embeds the same dotrc-core logic as the SaaS.
 
-### **1. Immutable domain primitives**
+## Key architectural rules
 
-Core defines the canonical types:
+- `dotrc-core` is pure: no I/O, no async, no platform APIs
+- All mutations are append-only
+- Visibility is explicit via ACL snapshots + grants
+- Links express meaning; chains are derived
+- Adapters gather facts → core decides → adapters persist
 
-- Dot, DotDraft
-- UserId, ScopeId, TenantId
-- VisibilityGrant (ACL snapshot + explicit grants)
-- Link (directed, typed relationships)
-- AttachmentRef (metadata only)
-- Tag (optional, sparse)
+## Developing across layers
 
-Dots are immutable. Nothing is edited or deleted.
+Common workflows:
 
-### **2. Validation & normalization (pure functions)**
+Core change
 
-Core validates and normalizes inputs deterministically:
+```
+cargo test -p dotrc-core
+```
 
-- titles, bodies, tags
-- link formats and targets
-- attachment metadata
-- content hashes
+Worker change
 
-Example responsibility:
+```
+pnpm dev
+```
 
-> “Given a draft dot and context, is this a valid dot and what is its canonical form?”
+WASM rebuild
 
-### **3. Authorization & visibility policy (ACL logic)**
+```
+pnpm build:core
+```
 
-Core answers visibility and sharing questions based on _provided facts_:
+Full repo
 
-- Can user X view dot Y?
-- Can user X grant access to dot Y?
+```
+pnpm lint
+cargo test
+```
 
-Visibility is:
+## What not to do
 
-- snapshotted at creation
-- append-only via explicit grants
-- never inferred retroactively
+- Don’t add DB access to core
+- Don’t mutate dots
+- Don’t infer permissions
+- Don’t add “states”
+- Don’t make links mandatory
 
-Core never fetches memberships; adapters supply them.
+If you feel tempted, re-read docs/overview.md.
 
-### **4. Command → write-set model**
+## License & usage
 
-Actions are handled as commands that return **what should be written**, not side effects.
-
-Examples:
-
-- create dot → returns dot + ACL snapshot + links + attachment refs
-- grant access → returns new visibility grant records
-- add follow-up → returns new dot + link
-
-Adapters persist the results.
-
-### **5. Links, not chains**
-
-- Links are directed and typed (followup, corrects, supersedes, related)
-- Chains/trails are _derived views_, not enforced structures
-- Superseding/corrections are represented by links, never mutation
-
-### **6. Minimal injected traits**
-
-Core uses tiny abstractions only where needed:
-
-- Clock (timestamps)
-- IdGen (IDs)
-
-No async, no DB traits, no platform leakage.
-
-## **API surface shape (high level)**
-
-Core functions fall into four groups:
-
-1. normalize/validate inputs
-2. authorization decisions
-3. command handlers that output write-sets
-4. optional helpers to interpret dot state (e.g., superseded)
-
-Core never:
-
-- talks to Slack
-- queries a database
-- performs HTTP
-- accesses filesystem/network
-
-## **Key philosophy**
-
-- Dots are facts, not tasks
-- History is append-only
-- Visibility is explicit and safe
-- Rules live in one place
-- Adapters deal with reality
-
-This keeps the system small, auditable, portable, and resistant to feature creep.
+- Core is licensed for reuse under <TBD>
+- SaaS and enterprise offerings are built on the same engine
+- No logic forks between deployments

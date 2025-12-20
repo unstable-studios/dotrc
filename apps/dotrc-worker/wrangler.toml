@@ -1,0 +1,9 @@
+name = "dotrc-worker"
+main = "src/index.ts"
+compatibility_date = "2025-12-20"
+
+# Bindings (fill in later)
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "dotrc"
+# database_id = "..."

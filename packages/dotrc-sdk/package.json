@@ -1,0 +1,6 @@
+{
+  "name": "dotrc-sdk",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts"
+}
