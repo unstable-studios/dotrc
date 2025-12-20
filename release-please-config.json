@@ -3,20 +3,17 @@
     "crates/dotrc-core": {
       "release-type": "rust",
       "package-name": "dotrc-core",
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": ["Cargo.toml"]
+      "changelog-path": "CHANGELOG.md"
     },
     "crates/dotrc-core-wasm": {
       "release-type": "rust",
       "package-name": "dotrc-core-wasm",
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": ["Cargo.toml"]
+      "changelog-path": "CHANGELOG.md"
     },
     "crates/dotrc-server": {
       "release-type": "rust",
       "package-name": "dotrc-server",
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": ["Cargo.toml"]
+      "changelog-path": "CHANGELOG.md"
     },
     "apps/dotrc-worker": {
       "release-type": "node",
