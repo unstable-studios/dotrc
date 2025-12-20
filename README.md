@@ -74,7 +74,7 @@ You do not need everything to get started. Pick a lane.
 - Git
 - Rust (stable) `rustup install stable && rustup component add clippy rustfmt`
 
-- Node.js 18+
+- Node.js 24+ `nvm use v24`
 - pnpm `npm install -g pnpm`
 
 ### Quick start options

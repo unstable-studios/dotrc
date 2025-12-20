@@ -1,7 +1,7 @@
 {
   "name": "dotrc",
   "private": true,
-  "packageManager": "pnpm@9",
+  "packageManager": "pnpm@9.0.0",
   "scripts": {
     "lint": "echo \"TODO: add lint\" && exit 0",
     "dev:worker": "pnpm --filter dotrc-worker dev",
