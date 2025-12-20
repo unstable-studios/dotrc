@@ -1,7 +1,7 @@
 export default {
   extends: ["@commitlint/config-conventional"],
   rules: {
-    // Allow empty scope to support skipping the scope question for some types
+    // Allow empty scope
     "scope-empty": [0],
     "type-enum": [
       2,
@@ -44,20 +44,12 @@ export default {
       allowCustomScopes: false,
     },
     messages: {
-      skip: "skip",
-      max: "upper %d chars",
-      min: "lower %d chars",
+      skip: "or skip",
+      max: "(max %d chars)",
+      min: "(min %d chars)",
       emptyWarning: "cannot be empty",
       upperLimitWarning: "over limit",
       lowerLimitWarning: "below limit",
-    },
-    // Skip scope for infra-type changes
-    skipQuestions: (answers) => {
-      const skip = [];
-      if (["ci", "chore", "build"].includes(answers.type)) {
-        skip.push("scope");
-      }
-      return skip;
     },
     questions: {
       type: {
