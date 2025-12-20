@@ -28,6 +28,6 @@
     { "type": "fix", "section": "Bug Fixes" },
     { "type": "perf", "section": "Performance" },
     { "type": "docs", "section": "Documentation" },
-    { "type": "chore", "section": "Miscellaneous", "hidden": false }
+    { "type": "chore", "section": "Miscellaneous", "hidden": true }
   ]
 }
