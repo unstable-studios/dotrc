@@ -1,3 +1,3 @@
 fn main() {
-  println!("dotrc-server (stub)");
+    println!("dotrc-server (stub)");
 }

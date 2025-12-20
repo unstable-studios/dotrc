@@ -165,3 +165,11 @@ If not, it probably doesn’t belong.
 - Domain-aligned
 
 DotRC values correctness and trustworthiness over speed or convenience.
+
+---
+
+## Repo Hygiene and Documentation
+
+When generating or updating documentation files in the `docs/` folder, ensure that they accurately reflect the core principles and architecture of DotRC as outlined above. Documentation should be clear, concise, and focused on invariants rather than implementation details.
+
+Whenever making changes to the codebase that affect core concepts (e.g., Dots, Links, ACLs), developer experience/setup, or other critical aspects, update the relevant documentation files to maintain consistency and clarity, including docs/ and the root README.md if necessary.

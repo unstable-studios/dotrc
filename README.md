@@ -67,15 +67,35 @@ dotrc/
 
 ## Prerequisites
 
-You do not need everything to get started. Pick a lane.
+Pick a lane; install only what you need.
 
-### Required (always)
+### Core (Rust-only)
 
 - Git
-- Rust (stable) `rustup install stable && rustup component add clippy rustfmt`
+- Rust (stable) and tools: `rustup install stable && rustup component add clippy rustfmt`
+- pnpm (for the pre-commit hook runner): `npm install -g pnpm`
 
-- Node.js 24+ `nvm use v24`
-- pnpm `npm install -g pnpm`
+### JS/Workers/Web
+
+- Everything above
+- Node.js 24+ (repo ships .nvmrc with 24 for convenience)
+- pnpm (repo uses `packageManager: pnpm@9.x`)
+
+## Bootstrap
+
+Run once to install dev hooks and deps:
+
+```
+pnpm install
+```
+
+This installs Husky and sets up the pre-commit hook that runs formatting/linting.
+
+### Editor defaults (VS Code)
+
+- Repo includes .vscode/settings.json with format on save (Prettier), rust-analyzer as Rust formatter, and clippy as the Rust check command.
+- Recommended extensions in .vscode/extensions.json: rust-analyzer, Prettier, ESLint.
+- If you prefer a different editor, mirror the same behaviors: format-on-save and clippy/fmt before commit.
 
 ### Quick start options
 
@@ -84,59 +104,29 @@ You do not need everything to get started. Pick a lane.
 No JS, no Workers, no Slack.
 
 ```
-cd crates/dotrc-core
-cargo test
+cargo test -p dotrc-core
 ```
 
-This validates:
-
-- dot creation rules
-- ACL semantics
-- link behavior
-- immutability guarantees
-
-Core has zero external dependencies.
+Validates dot creation, ACL semantics, link behavior, immutability. No external deps.
 
 #### Run the Cloudflare Worker (SaaS mode)
-
-Setup
 
 ```
 cd apps/dotrc-worker
 pnpm install
 cp .env.example .env
+pnpm dev
 ```
 
-Required env vars:
-
-- Slack app credentials (optional)
-- Cloudflare bindings (D1, R2)
-- Auth secrets
-
-Run locally
-
-pnpm dev
-
-This starts:
-
-- local Worker
-- API endpoints
-- Slack event handling (if configured)
+Requires Slack creds (optional), Cloudflare bindings (D1/R2), auth secrets.
 
 #### Run the self-hosted server (enterprise mode)
 
 ```
-cd crates/dotrc-server
-cargo run
+cargo run -p dotrc-server
 ```
 
-Requires:
-
-- Postgres
-- Object storage (S3-compatible)
-- Config via env vars or config file
-
-This binary embeds the same dotrc-core logic as the SaaS.
+Requires Postgres, object storage (S3-compatible), and config via env vars/config file.
 
 ## Key architectural rules
 
@@ -148,32 +138,11 @@ This binary embeds the same dotrc-core logic as the SaaS.
 
 ## Developing across layers
 
-Common workflows:
-
-Core change
-
-```
-cargo test -p dotrc-core
-```
-
-Worker change
-
-```
-pnpm dev
-```
-
-WASM rebuild
-
-```
-pnpm build:core
-```
-
-Full repo
-
-```
-pnpm lint
-cargo test
-```
+- Core tests: `cargo test -p dotrc-core`
+- Lint (pre-commit uses this): `pnpm lint` (runs `cargo fmt --all --check` + `cargo clippy --workspace --all-targets --all-features -D warnings`)
+- Worker dev: `pnpm --filter dotrc-worker dev`
+- Web dev: `pnpm --filter dotrc-web dev`
+- WASM rebuild: `pnpm build:core`
 
 ## What not to do
 

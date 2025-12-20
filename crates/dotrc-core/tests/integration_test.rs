@@ -1,4 +1,4 @@
-use dotrc_core::commands::{create_dot, create_link, grant_access};
+use dotrc_core::commands::{create_dot, create_link, grant_access, LinkGrants};
 use dotrc_core::policy::{can_view_dot, filter_visible_dots, AuthContext};
 use dotrc_core::types::{
     Clock, DotDraft, DotId, IdGen, LinkType, ScopeId, TenantId, Timestamp, UserId,
@@ -200,8 +200,10 @@ fn test_full_workflow_links_and_superseding() {
         &dot2,
         &dot1,
         LinkType::Supersedes,
-        &grants2,
-        &grants1,
+        LinkGrants {
+            from: &grants2,
+            to: &grants1,
+        },
         &[],
         &alice_context,
         &clock3,

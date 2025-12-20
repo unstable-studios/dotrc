@@ -12,7 +12,7 @@
 use alloc::{string::ToString, vec::Vec};
 
 use crate::errors::{AuthorizationError, Result};
-use crate::types::{Dot, UserId, ScopeId, VisibilityGrant};
+use crate::types::{Dot, ScopeId, UserId, VisibilityGrant};
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
@@ -42,21 +42,17 @@ impl AuthContext {
 /// Check if a user can view a dot
 /// Based on provided visibility grants and scope memberships
 /// Returns Ok(()) if allowed, Err otherwise
-pub fn can_view_dot(
-    dot: &Dot,
-    grants: &[VisibilityGrant],
-    context: &AuthContext,
-) -> Result<()> {
+pub fn can_view_dot(dot: &Dot, grants: &[VisibilityGrant], context: &AuthContext) -> Result<()> {
     // Creator can always view their own dot
     if dot.created_by == context.requesting_user {
         return Ok(());
     }
-    
+
     // Check direct user grants
-    let has_user_grant = grants.iter().any(|g| {
-        g.dot_id == dot.id && g.user_id.as_ref() == Some(&context.requesting_user)
-    });
-    
+    let has_user_grant = grants
+        .iter()
+        .any(|g| g.dot_id == dot.id && g.user_id.as_ref() == Some(&context.requesting_user));
+
     if has_user_grant {
         return Ok(());
     }
@@ -64,7 +60,8 @@ pub fn can_view_dot(
     Err(AuthorizationError::CannotViewDot {
         user_id: context.requesting_user.as_str().to_string(),
         dot_id: dot.id.as_str().to_string(),
-    }.into())
+    }
+    .into())
 }
 
 /// Check if a user can grant access to a dot
@@ -78,15 +75,13 @@ pub fn can_grant_access(
     if dot.created_by == context.requesting_user {
         return Ok(());
     }
-    
+
     // Must be able to view the dot to grant access
-    can_view_dot(dot, grants, context).map_err(|_| {
-        AuthorizationError::CannotGrantAccess {
-            user_id: context.requesting_user.as_str().to_string(),
-            dot_id: dot.id.as_str().to_string(),
-        }
+    can_view_dot(dot, grants, context).map_err(|_| AuthorizationError::CannotGrantAccess {
+        user_id: context.requesting_user.as_str().to_string(),
+        dot_id: dot.id.as_str().to_string(),
     })?;
-    
+
     Ok(())
 }
 
@@ -106,7 +101,7 @@ pub fn can_create_link(
             dot_id: source_dot.id.as_str().to_string(),
         }
     })?;
-    
+
     // Must be able to view the target dot
     can_view_dot(target_dot, target_grants, context).map_err(|_| {
         AuthorizationError::CannotCreateLink {
@@ -114,7 +109,7 @@ pub fn can_create_link(
             dot_id: target_dot.id.as_str().to_string(),
         }
     })?;
-    
+
     Ok(())
 }
 
@@ -178,7 +173,7 @@ mod tests {
         let dot = create_test_dot("dot-1", "user-1", None);
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
         let grants = vec![];
-        
+
         let result = can_view_dot(&dot, &grants, &context);
         assert!(result.is_ok());
     }
@@ -188,7 +183,7 @@ mod tests {
         let dot = create_test_dot("dot-1", "user-1", None);
         let context = AuthContext::new(UserId::new("user-2"), vec![]);
         let grants = vec![create_user_grant("dot-1", "user-2")];
-        
+
         let result = can_view_dot(&dot, &grants, &context);
         assert!(result.is_ok());
     }
@@ -198,24 +193,21 @@ mod tests {
         let dot = create_test_dot("dot-1", "user-1", None);
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
         let grants = vec![create_user_grant("dot-1", "user-2")];
-        
+
         let result = can_view_dot(&dot, &grants, &context);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Authorization(
-                AuthorizationError::CannotViewDot { .. }
-            )));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Authorization(AuthorizationError::CannotViewDot { .. })
+        ));
     }
 
     #[test]
     fn test_scope_member_requires_explicit_grant() {
         let dot = create_test_dot("dot-1", "user-1", Some("scope-1"));
-        let context = AuthContext::new(
-            UserId::new("user-2"),
-            vec![ScopeId::new("scope-1")],
-        );
+        let context = AuthContext::new(UserId::new("user-2"), vec![ScopeId::new("scope-1")]);
         let grants = vec![create_scope_grant("dot-1", "scope-1")];
-        
+
         let result = can_view_dot(&dot, &grants, &context);
         assert!(result.is_err());
     }
@@ -223,12 +215,9 @@ mod tests {
     #[test]
     fn test_non_scope_member_cannot_view() {
         let dot = create_test_dot("dot-1", "user-1", Some("scope-1"));
-        let context = AuthContext::new(
-            UserId::new("user-2"),
-            vec![ScopeId::new("scope-2")],
-        );
+        let context = AuthContext::new(UserId::new("user-2"), vec![ScopeId::new("scope-2")]);
         let grants = vec![create_scope_grant("dot-1", "scope-1")];
-        
+
         let result = can_view_dot(&dot, &grants, &context);
         assert!(result.is_err());
     }
@@ -241,7 +230,7 @@ mod tests {
             create_user_grant("dot-1", "user-2"),
             create_user_grant("dot-1", "user-3"),
         ];
-        
+
         let result = can_view_dot(&dot, &grants, &context);
         assert!(result.is_ok());
     }
@@ -251,7 +240,7 @@ mod tests {
         let dot = create_test_dot("dot-1", "user-1", None);
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
         let grants = vec![];
-        
+
         let result = can_grant_access(&dot, &grants, &context);
         assert!(result.is_ok());
     }
@@ -261,7 +250,7 @@ mod tests {
         let dot = create_test_dot("dot-1", "user-1", None);
         let context = AuthContext::new(UserId::new("user-2"), vec![]);
         let grants = vec![create_user_grant("dot-1", "user-2")];
-        
+
         let result = can_grant_access(&dot, &grants, &context);
         assert!(result.is_ok());
     }
@@ -271,13 +260,13 @@ mod tests {
         let dot = create_test_dot("dot-1", "user-1", None);
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
         let grants = vec![create_user_grant("dot-1", "user-2")];
-        
+
         let result = can_grant_access(&dot, &grants, &context);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Authorization(
-                AuthorizationError::CannotGrantAccess { .. }
-            )));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Authorization(AuthorizationError::CannotGrantAccess { .. })
+        ));
     }
 
     #[test]
@@ -287,7 +276,7 @@ mod tests {
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
         let source_grants = vec![create_user_grant("dot-1", "user-3")];
         let target_grants = vec![create_user_grant("dot-2", "user-3")];
-        
+
         let result = can_create_link(&source, &target, &source_grants, &target_grants, &context);
         assert!(result.is_ok());
     }
@@ -299,7 +288,7 @@ mod tests {
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
         let source_grants = vec![]; // No grant for source
         let target_grants = vec![create_user_grant("dot-2", "user-3")];
-        
+
         let result = can_create_link(&source, &target, &source_grants, &target_grants, &context);
         assert!(result.is_err());
     }
@@ -311,7 +300,7 @@ mod tests {
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
         let source_grants = vec![create_user_grant("dot-1", "user-3")];
         let target_grants = vec![]; // No grant for target
-        
+
         let result = can_create_link(&source, &target, &source_grants, &target_grants, &context);
         assert!(result.is_err());
     }
@@ -322,18 +311,15 @@ mod tests {
             UserId::new("user-1"),
             vec![ScopeId::new("scope-1"), ScopeId::new("scope-2")],
         );
-        
+
         assert!(is_scope_member(&ScopeId::new("scope-1"), &context));
         assert!(is_scope_member(&ScopeId::new("scope-2"), &context));
     }
 
     #[test]
     fn test_is_scope_member_false() {
-        let context = AuthContext::new(
-            UserId::new("user-1"),
-            vec![ScopeId::new("scope-1")],
-        );
-        
+        let context = AuthContext::new(UserId::new("user-1"), vec![ScopeId::new("scope-1")]);
+
         assert!(!is_scope_member(&ScopeId::new("scope-2"), &context));
     }
 
@@ -342,15 +328,15 @@ mod tests {
         let dot1 = create_test_dot("dot-1", "user-1", None);
         let dot2 = create_test_dot("dot-2", "user-2", None);
         let dot3 = create_test_dot("dot-3", "user-3", None);
-        
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
         let grants = vec![
             create_user_grant("dot-2", "user-1"), // Can see dot-2
-            // Cannot see dot-3
+                                                  // Cannot see dot-3
         ];
-        
+
         let visible = filter_visible_dots(vec![dot1, dot2, dot3], &grants, &context);
-        
+
         assert_eq!(visible.len(), 2); // Own dot + dot-2
         assert!(visible.iter().any(|d| d.id.as_str() == "dot-1"));
         assert!(visible.iter().any(|d| d.id.as_str() == "dot-2"));
@@ -360,12 +346,12 @@ mod tests {
     fn test_filter_visible_dots_empty() {
         let dot1 = create_test_dot("dot-1", "user-1", None);
         let dot2 = create_test_dot("dot-2", "user-2", None);
-        
+
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
         let grants = vec![]; // No grants
-        
+
         let visible = filter_visible_dots(vec![dot1, dot2], &grants, &context);
-        
+
         assert_eq!(visible.len(), 0);
     }
 
@@ -375,7 +361,7 @@ mod tests {
             UserId::new("user-1"),
             vec![ScopeId::new("scope-1"), ScopeId::new("scope-2")],
         );
-        
+
         assert_eq!(context.requesting_user.as_str(), "user-1");
         assert_eq!(context.user_scope_memberships.len(), 2);
     }

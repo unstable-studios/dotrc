@@ -13,15 +13,11 @@ use alloc::{string::ToString, vec, vec::Vec};
 
 use crate::errors::{InvalidLinkError, Result};
 use crate::normalize::{
-    normalize_title, normalize_body, normalize_tags, 
-    validate_visibility_required, validate_attachment_filename,
-    validate_attachment_size, validate_content_hash,
+    normalize_body, normalize_tags, normalize_title, validate_attachment_filename,
+    validate_attachment_size, validate_content_hash, validate_visibility_required,
 };
-use crate::policy::{AuthContext, can_grant_access, can_create_link};
-use crate::types::{
-    Clock, IdGen, Dot, DotDraft, Link, LinkType, 
-    VisibilityGrant, UserId, ScopeId,
-};
+use crate::policy::{can_create_link, can_grant_access, AuthContext};
+use crate::types::{Clock, Dot, DotDraft, IdGen, Link, LinkType, ScopeId, UserId, VisibilityGrant};
 
 /// Write-set result from creating a dot
 #[derive(Debug, Clone)]
@@ -52,27 +48,24 @@ pub fn create_dot<C: Clock, I: IdGen>(
     id_gen: &I,
 ) -> Result<CreateDotResult> {
     // Validate visibility
-    validate_visibility_required(
-        draft.visible_to_users.len(),
-        draft.visible_to_scopes.len(),
-    )?;
-    
+    validate_visibility_required(draft.visible_to_users.len(), draft.visible_to_scopes.len())?;
+
     // Normalize inputs
     let title = normalize_title(&draft.title)?;
     let body = normalize_body(draft.body.as_deref())?;
     let tags = normalize_tags(&draft.tags)?;
-    
+
     // Validate attachments
     for attachment in &draft.attachments {
         validate_attachment_filename(&attachment.filename)?;
         validate_attachment_size(attachment.size_bytes)?;
         validate_content_hash(&attachment.content_hash)?;
     }
-    
+
     // Generate ID and timestamp
     let dot_id = id_gen.generate_dot_id();
     let now = clock.now();
-    
+
     // Create the dot
     let dot = Dot {
         id: dot_id.clone(),
@@ -85,10 +78,10 @@ pub fn create_dot<C: Clock, I: IdGen>(
         tags,
         attachments: draft.attachments,
     };
-    
+
     // Create visibility grants (ACL snapshot at creation)
     let mut grants = Vec::new();
-    
+
     for user_id in draft.visible_to_users {
         grants.push(VisibilityGrant {
             dot_id: dot_id.clone(),
@@ -98,7 +91,7 @@ pub fn create_dot<C: Clock, I: IdGen>(
             granted_by: None, // Initial snapshot, not an explicit grant
         });
     }
-    
+
     for scope_id in draft.visible_to_scopes {
         grants.push(VisibilityGrant {
             dot_id: dot_id.clone(),
@@ -108,7 +101,7 @@ pub fn create_dot<C: Clock, I: IdGen>(
             granted_by: None,
         });
     }
-    
+
     Ok(CreateDotResult {
         dot,
         grants,
@@ -128,20 +121,20 @@ pub fn grant_access<C: Clock>(
 ) -> Result<GrantAccessResult> {
     // Verify the requesting user can grant access
     can_grant_access(dot, existing_grants, context)?;
-    
+
     // Validate at least one target
     validate_visibility_required(target_users.len(), target_scopes.len())?;
-    
+
     let now = clock.now();
     let mut grants = Vec::new();
-    
+
     // Create user grants
     for user_id in target_users {
         // Skip if already granted
-        let already_granted = existing_grants.iter().any(|g| {
-            g.dot_id == dot.id && g.user_id.as_ref() == Some(&user_id)
-        });
-        
+        let already_granted = existing_grants
+            .iter()
+            .any(|g| g.dot_id == dot.id && g.user_id.as_ref() == Some(&user_id));
+
         if !already_granted {
             grants.push(VisibilityGrant {
                 dot_id: dot.id.clone(),
@@ -152,13 +145,13 @@ pub fn grant_access<C: Clock>(
             });
         }
     }
-    
+
     // Create scope grants
     for scope_id in target_scopes {
-        let already_granted = existing_grants.iter().any(|g| {
-            g.dot_id == dot.id && g.scope_id.as_ref() == Some(&scope_id)
-        });
-        
+        let already_granted = existing_grants
+            .iter()
+            .any(|g| g.dot_id == dot.id && g.scope_id.as_ref() == Some(&scope_id));
+
         if !already_granted {
             grants.push(VisibilityGrant {
                 dot_id: dot.id.clone(),
@@ -169,8 +162,14 @@ pub fn grant_access<C: Clock>(
             });
         }
     }
-    
+
     Ok(GrantAccessResult { grants })
+}
+
+/// Grants needed to authorize a link creation
+pub struct LinkGrants<'a> {
+    pub from: &'a [VisibilityGrant],
+    pub to: &'a [VisibilityGrant],
 }
 
 /// Create a link between two dots
@@ -179,8 +178,7 @@ pub fn create_link<C: Clock>(
     from_dot: &Dot,
     to_dot: &Dot,
     link_type: LinkType,
-    from_grants: &[VisibilityGrant],
-    to_grants: &[VisibilityGrant],
+    grants: LinkGrants,
     existing_links: &[Link],
     context: &AuthContext,
     clock: &C,
@@ -189,34 +187,35 @@ pub fn create_link<C: Clock>(
     if from_dot.id == to_dot.id {
         return Err(InvalidLinkError::SelfReference {
             dot_id: from_dot.id.as_str().to_string(),
-        }.into());
+        }
+        .into());
     }
-    
+
     // Validate same tenant (no cross-tenant links)
     if from_dot.tenant_id != to_dot.tenant_id {
         return Err(InvalidLinkError::CrossTenantLink {
             link_type: link_type.to_string(),
-        }.into());
+        }
+        .into());
     }
-    
+
     // Check authorization
-    can_create_link(from_dot, to_dot, from_grants, to_grants, context)?;
-    
+    can_create_link(from_dot, to_dot, grants.from, grants.to, context)?;
+
     // Check if link already exists
     let link_exists = existing_links.iter().any(|l| {
-        l.from_dot_id == from_dot.id 
-            && l.to_dot_id == to_dot.id 
-            && l.link_type == link_type
+        l.from_dot_id == from_dot.id && l.to_dot_id == to_dot.id && l.link_type == link_type
     });
-    
+
     if link_exists {
         return Err(InvalidLinkError::LinkAlreadyExists {
             from_dot_id: from_dot.id.as_str().to_string(),
             to_dot_id: to_dot.id.as_str().to_string(),
             link_type: link_type.to_string(),
-        }.into());
+        }
+        .into());
     }
-    
+
     // Create the link
     let link = Link {
         from_dot_id: from_dot.id.clone(),
@@ -224,7 +223,7 @@ pub fn create_link<C: Clock>(
         link_type,
         created_at: clock.now(),
     };
-    
+
     Ok(CreateLinkResult { link })
 }
 
@@ -232,35 +231,37 @@ pub fn create_link<C: Clock>(
 mod tests {
     use super::*;
     use crate::types::{DotId, TenantId, Timestamp};
-    
+
     // Test implementations of Clock and IdGen
     struct TestClock {
         time: String,
     }
-    
+
     impl Clock for TestClock {
         fn now(&self) -> Timestamp {
             self.time.clone()
         }
     }
-    
+
     struct TestIdGen {
         next_id: std::cell::RefCell<u32>,
     }
-    
+
     impl TestIdGen {
         fn new() -> Self {
-            Self { next_id: std::cell::RefCell::new(1) }
+            Self {
+                next_id: std::cell::RefCell::new(1),
+            }
         }
     }
-    
+
     impl IdGen for TestIdGen {
         fn generate_dot_id(&self) -> DotId {
             let id = *self.next_id.borrow();
             *self.next_id.borrow_mut() += 1;
             DotId::new(format!("dot-{}", id))
         }
-        
+
         fn generate_attachment_id(&self) -> String {
             let id = *self.next_id.borrow();
             *self.next_id.borrow_mut() += 1;
@@ -281,13 +282,15 @@ mod tests {
             visible_to_scopes: vec![ScopeId::new("scope-1")],
             attachments: vec![],
         };
-        
-        let clock = TestClock { time: "2025-12-20T12:00:00Z".to_string() };
+
+        let clock = TestClock {
+            time: "2025-12-20T12:00:00Z".to_string(),
+        };
         let id_gen = TestIdGen::new();
-        
+
         let result = create_dot(draft, &clock, &id_gen);
         assert!(result.is_ok());
-        
+
         let created = result.unwrap();
         assert_eq!(created.dot.title, "Test Dot");
         assert_eq!(created.dot.body, Some("Body content".to_string()));
@@ -307,10 +310,12 @@ mod tests {
             visible_to_scopes: vec![],
             attachments: vec![],
         };
-        
-        let clock = TestClock { time: "2025-12-20T12:00:00Z".to_string() };
+
+        let clock = TestClock {
+            time: "2025-12-20T12:00:00Z".to_string(),
+        };
         let id_gen = TestIdGen::new();
-        
+
         let result = create_dot(draft, &clock, &id_gen);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().dot.title, "Whitespace Title");
@@ -329,10 +334,12 @@ mod tests {
             visible_to_scopes: vec![],
             attachments: vec![],
         };
-        
-        let clock = TestClock { time: "2025-12-20T12:00:00Z".to_string() };
+
+        let clock = TestClock {
+            time: "2025-12-20T12:00:00Z".to_string(),
+        };
         let id_gen = TestIdGen::new();
-        
+
         let result = create_dot(draft, &clock, &id_gen);
         assert!(result.is_err());
     }
@@ -350,10 +357,12 @@ mod tests {
             visible_to_scopes: vec![],
             attachments: vec![],
         };
-        
-        let clock = TestClock { time: "2025-12-20T12:00:00Z".to_string() };
+
+        let clock = TestClock {
+            time: "2025-12-20T12:00:00Z".to_string(),
+        };
         let id_gen = TestIdGen::new();
-        
+
         let result = create_dot(draft, &clock, &id_gen);
         assert!(result.is_err());
     }
@@ -371,13 +380,15 @@ mod tests {
             visible_to_scopes: vec![],
             attachments: vec![],
         };
-        
-        let clock = TestClock { time: "2025-12-20T12:00:00Z".to_string() };
+
+        let clock = TestClock {
+            time: "2025-12-20T12:00:00Z".to_string(),
+        };
         let id_gen = TestIdGen::new();
-        
+
         let result = create_dot(draft, &clock, &id_gen);
         assert!(result.is_ok());
-        
+
         let dot = result.unwrap().dot;
         assert_eq!(dot.tags[0].as_str(), "important");
         assert_eq!(dot.tags[1].as_str(), "urgent");
@@ -396,10 +407,12 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = grant_access(
             &dot,
             &[],
@@ -408,7 +421,7 @@ mod tests {
             &context,
             &clock,
         );
-        
+
         assert!(result.is_ok());
         let grants = result.unwrap().grants;
         assert_eq!(grants.len(), 1);
@@ -429,10 +442,12 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let context = AuthContext::new(UserId::new("user-3"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = grant_access(
             &dot,
             &[],
@@ -441,7 +456,7 @@ mod tests {
             &context,
             &clock,
         );
-        
+
         assert!(result.is_err());
     }
 
@@ -458,20 +473,20 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
-        let existing = vec![
-            VisibilityGrant {
-                dot_id: DotId::new("dot-1"),
-                user_id: Some(UserId::new("user-2")),
-                scope_id: None,
-                granted_at: "2025-12-20T12:00:00Z".to_string(),
-                granted_by: None,
-            },
-        ];
-        
+
+        let existing = vec![VisibilityGrant {
+            dot_id: DotId::new("dot-1"),
+            user_id: Some(UserId::new("user-2")),
+            scope_id: None,
+            granted_at: "2025-12-20T12:00:00Z".to_string(),
+            granted_by: None,
+        }];
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = grant_access(
             &dot,
             &existing,
@@ -480,7 +495,7 @@ mod tests {
             &context,
             &clock,
         );
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap().grants.len(), 0); // No new grants
     }
@@ -498,7 +513,7 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let to_dot = Dot {
             id: DotId::new("dot-2"),
             tenant_id: TenantId::new("tenant-1"),
@@ -510,21 +525,22 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = create_link(
             &from_dot,
             &to_dot,
             LinkType::Followup,
-            &[],
-            &[],
+            LinkGrants { from: &[], to: &[] },
             &[],
             &context,
             &clock,
         );
-        
+
         assert!(result.is_ok());
         let link = result.unwrap().link;
         assert_eq!(link.from_dot_id, DotId::new("dot-1"));
@@ -545,21 +561,22 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = create_link(
             &dot,
             &dot,
             LinkType::Followup,
-            &[],
-            &[],
+            LinkGrants { from: &[], to: &[] },
             &[],
             &context,
             &clock,
         );
-        
+
         assert!(result.is_err());
     }
 
@@ -576,7 +593,7 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let to_dot = Dot {
             id: DotId::new("dot-2"),
             tenant_id: TenantId::new("tenant-2"), // Different tenant
@@ -588,21 +605,22 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = create_link(
             &from_dot,
             &to_dot,
             LinkType::Followup,
-            &[],
-            &[],
+            LinkGrants { from: &[], to: &[] },
             &[],
             &context,
             &clock,
         );
-        
+
         assert!(result.is_err());
     }
 
@@ -619,7 +637,7 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
+
         let to_dot = Dot {
             id: DotId::new("dot-2"),
             tenant_id: TenantId::new("tenant-1"),
@@ -631,30 +649,29 @@ mod tests {
             tags: vec![],
             attachments: vec![],
         };
-        
-        let existing_links = vec![
-            Link {
-                from_dot_id: DotId::new("dot-1"),
-                to_dot_id: DotId::new("dot-2"),
-                link_type: LinkType::Followup,
-                created_at: "2025-12-20T12:00:00Z".to_string(),
-            },
-        ];
-        
+
+        let existing_links = vec![Link {
+            from_dot_id: DotId::new("dot-1"),
+            to_dot_id: DotId::new("dot-2"),
+            link_type: LinkType::Followup,
+            created_at: "2025-12-20T12:00:00Z".to_string(),
+        }];
+
         let context = AuthContext::new(UserId::new("user-1"), vec![]);
-        let clock = TestClock { time: "2025-12-20T13:00:00Z".to_string() };
-        
+        let clock = TestClock {
+            time: "2025-12-20T13:00:00Z".to_string(),
+        };
+
         let result = create_link(
             &from_dot,
             &to_dot,
             LinkType::Followup,
-            &[],
-            &[],
+            LinkGrants { from: &[], to: &[] },
             &existing_links,
             &context,
             &clock,
         );
-        
+
         assert!(result.is_err());
     }
 }

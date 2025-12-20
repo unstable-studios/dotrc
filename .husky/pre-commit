@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Abort on first error
+set -e
+
+# Run Rust formatting and linting (std + all features)
+pnpm lint

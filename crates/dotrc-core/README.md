@@ -55,7 +55,13 @@ dot.title = "Updated Title";  // Won't compile - no mutable fields
 
 // ✅ CORRECT - create new dot
 let corrected_dot = create_dot(corrected_draft, &clock, &id_gen)?;
-create_link(&corrected_dot, &original_dot, LinkType::Corrects, ...)?;
+create_link(
+    &corrected_dot,
+    &original_dot,
+    LinkType::Corrects,
+    LinkGrants { from: ..., to: ... },
+    ...,
+)?;
 ```
 
 ### Explicit ACLs
@@ -187,8 +193,10 @@ let link = create_link(
     &followup_dot,
     &original_dot,
     LinkType::Followup,
-    &followup_grants,
-    &original_grants,
+    LinkGrants {
+        from: &followup_grants,
+        to: &original_grants,
+    },
     &existing_links,
     &context,
     &SystemClock,
