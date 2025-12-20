@@ -57,7 +57,11 @@ fn test_full_workflow_create_and_view() {
         tenant_id: TenantId::new("company-1"),
         scope_id: Some(ScopeId::new("engineering-channel")),
         tags: vec!["meeting".to_string(), "important".to_string()],
-        visible_to_users: vec![UserId::new("alice"), UserId::new("bob")],
+        visible_to_users: vec![
+            UserId::new("alice"),
+            UserId::new("bob"),
+            UserId::new("charlie"),
+        ],
         visible_to_scopes: vec![ScopeId::new("engineering-channel")],
         attachments: vec![],
     };
@@ -69,7 +73,7 @@ fn test_full_workflow_create_and_view() {
     // Verify dot was created correctly
     assert_eq!(dot.title, "Meeting Notes");
     assert_eq!(dot.created_by, UserId::new("alice"));
-    assert_eq!(grants.len(), 3); // alice, bob, and engineering-channel
+    assert_eq!(grants.len(), 4); // alice, bob, charlie, and engineering-channel
 
     // Alice (creator) can view
     let alice_context = AuthContext::new(UserId::new("alice"), vec![]);
@@ -79,7 +83,7 @@ fn test_full_workflow_create_and_view() {
     let bob_context = AuthContext::new(UserId::new("bob"), vec![]);
     assert!(can_view_dot(&dot, &grants, &bob_context).is_ok());
 
-    // Charlie (in scope) can view
+    // Charlie is explicitly granted (scope grant is provenance only)
     let charlie_context = AuthContext::new(
         UserId::new("charlie"),
         vec![ScopeId::new("engineering-channel")],
@@ -247,7 +251,7 @@ fn test_full_workflow_filter_visible_dots() {
         tenant_id: TenantId::new("company-1"),
         scope_id: Some(ScopeId::new("eng-team")),
         tags: vec![],
-        visible_to_users: vec![],
+        visible_to_users: vec![UserId::new("bob")],
         visible_to_scopes: vec![ScopeId::new("eng-team")],
         attachments: vec![],
     };
@@ -277,7 +281,7 @@ fn test_full_workflow_filter_visible_dots() {
     all_grants.extend(result2.grants);
     all_grants.extend(result3.grants);
 
-    // Bob can see public announcement and team update (he's in eng-team scope)
+    // Bob can see public announcement and team update (explicit grant + creator)
     let bob_context = AuthContext::new(UserId::new("bob"), vec![ScopeId::new("eng-team")]);
     let bob_visible = filter_visible_dots(all_dots.clone(), &all_grants, &bob_context);
     assert_eq!(bob_visible.len(), 2);
@@ -357,7 +361,7 @@ fn test_acl_snapshot_immutability() {
     };
     let id_gen = TestIdGen::new();
 
-    // Create dot visible to engineering scope at time of creation
+    // Create dot with scope provenance only (no explicit user grants)
     let draft = DotDraft {
         title: "Engineering Memo".to_string(),
         body: None,
@@ -374,16 +378,13 @@ fn test_acl_snapshot_immutability() {
     let dot = result.dot;
     let grants = result.grants;
 
-    // Bob joins engineering scope after dot was created
+    // Bob is a member of engineering scope, but without explicit grant
     let bob_context = AuthContext::new(UserId::new("bob"), vec![ScopeId::new("engineering")]);
 
-    // Bob can see it because the grant is for the scope
-    assert!(can_view_dot(&dot, &grants, &bob_context).is_ok());
+    // Bob CANNOT see it: enforcement uses explicit principal grants only
+    assert!(can_view_dot(&dot, &grants, &bob_context).is_err());
 
-    // The key point: the ACL snapshot at creation time never changes
-    // If we want to revoke Bob's access, we'd need a new append-only
-    // revocation record (not implemented in this basic version)
-    // The grants themselves are immutable
+    // The key point: adapters should expand scope membership to explicit
+    // user grants at creation time. Grants are immutable write-sets.
     assert_eq!(grants.len(), 1);
-    assert!(grants[0].granted_by.is_none()); // Initial snapshot
 }

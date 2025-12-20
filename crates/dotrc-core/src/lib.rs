@@ -8,6 +8,7 @@
 //! - No external service calls
 //! - No async runtime required
 //! - No platform-specific dependencies
+//! - Supports `no_std` environments (with `alloc`)
 //!
 //! ## Architecture
 //!
@@ -86,6 +87,11 @@
 //! - [`normalize`] - Pure validation and normalization functions
 //! - [`policy`] - Authorization and visibility policy decisions
 //! - [`commands`] - Command handlers that return write-sets
+
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
 
 pub mod commands;
 pub mod errors;

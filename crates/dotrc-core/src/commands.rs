@@ -1,3 +1,16 @@
+//! Command handlers that return write-sets.
+//!
+//! Core performs validation and policy decisions, then returns records
+//! to persist. Adapters are responsible for storage and external I/O.
+//!
+//! Commands:
+//! - `create_dot` → returns `Dot` + ACL snapshot grants + optional links
+//! - `grant_access` → returns new `VisibilityGrant` records
+//! - `create_link` → returns a `Link` record
+
+#[cfg(not(feature = "std"))]
+use alloc::{string::ToString, vec, vec::Vec};
+
 use crate::errors::{InvalidLinkError, Result};
 use crate::normalize::{
     normalize_title, normalize_body, normalize_tags, 

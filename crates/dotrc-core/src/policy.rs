@@ -1,6 +1,24 @@
+//! Authorization and visibility policy for dotrc-core.
+//!
+//! Enforcement is based on immutable facts provided by adapters:
+//! - The requesting principal (`UserId`)
+//! - Explicit visibility grants (`VisibilityGrant{ user_id: Some(..) }`)
+//! - Optional scope memberships (for adapter logic), but core does not
+//!   infer access from scope grants alone.
+//!
+//! This module answers: can a user view a dot, grant access, or create links?
+
+#[cfg(not(feature = "std"))]
+use alloc::{string::ToString, vec::Vec};
+
 use crate::errors::{AuthorizationError, Result};
 use crate::types::{Dot, UserId, ScopeId, VisibilityGrant};
+
+#[cfg(feature = "std")]
 use std::collections::HashSet;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet as HashSet;
 
 /// Context for authorization decisions
 /// Adapters provide this data - core never fetches it
@@ -42,19 +60,7 @@ pub fn can_view_dot(
     if has_user_grant {
         return Ok(());
     }
-    
-    // Check scope-based grants
-    let has_scope_grant = grants.iter().any(|g| {
-        g.dot_id == dot.id 
-            && g.scope_id.as_ref()
-                .map(|scope_id| context.user_scope_memberships.contains(scope_id))
-                .unwrap_or(false)
-    });
-    
-    if has_scope_grant {
-        return Ok(());
-    }
-    
+
     Err(AuthorizationError::CannotViewDot {
         user_id: context.requesting_user.as_str().to_string(),
         dot_id: dot.id.as_str().to_string(),
@@ -202,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scope_member_can_view() {
+    fn test_scope_member_requires_explicit_grant() {
         let dot = create_test_dot("dot-1", "user-1", Some("scope-1"));
         let context = AuthContext::new(
             UserId::new("user-2"),
@@ -211,7 +217,7 @@ mod tests {
         let grants = vec![create_scope_grant("dot-1", "scope-1")];
         
         let result = can_view_dot(&dot, &grants, &context);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]

@@ -3,6 +3,10 @@ name = "dotrc-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["std"]
+std = ["serde/std", "thiserror"]
+
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-thiserror = "1"
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+thiserror = { version = "1", optional = true }

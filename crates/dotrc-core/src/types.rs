@@ -1,5 +1,20 @@
+//! Domain types for dotrc-core.
+//!
+//! This module defines immutable primitives used across the core:
+//! `Dot`, `DotId`, `TenantId`, `UserId`, `ScopeId`, `Link`, `VisibilityGrant`,
+//! `AttachmentRef`, `Tag`, and minimal DI traits `Clock` and `IdGen`.
+//!
+//! Invariants:
+//! - Dots are never edited or deleted (append-only via new dots and links)
+//! - Multi-tenancy is explicit (`tenant_id` on persisted entities)
+//! - Links are directed and typed; tags are optional and sparse
+//! - Core types are serialization-friendly and platform-agnostic
+
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
+use core::fmt;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// Timestamp in RFC3339 format (UTC)
 pub type Timestamp = String;
@@ -45,7 +60,7 @@ impl fmt::Display for UserId {
 }
 
 /// Unique identifier for a scope (channel, project, team, etc.)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ScopeId(pub String);
 
 impl ScopeId {

@@ -1,5 +1,26 @@
-use crate::errors::{ValidationError, Result};
+//! Deterministic normalization and validation utilities.
+//!
+//! Responsibilities:
+//! - Normalize titles, bodies, and tags into canonical forms
+//! - Validate attachment metadata (filename, size, content hash)
+//! - Enforce conservative limits to keep the core predictable
+//!
+//! All functions are pure: same inputs → same outputs.
+
+#[cfg(not(feature = "std"))]
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+
+use crate::errors::{Result, ValidationError};
 use crate::types::Tag;
+
+#[cfg(feature = "std")]
+use std::collections::HashSet as SetImpl;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet as SetImpl;
 
 /// Maximum title length (characters)
 pub const MAX_TITLE_LENGTH: usize = 200;
@@ -25,18 +46,19 @@ pub const MAX_ATTACHMENT_SIZE: u64 = 50 * 1024 * 1024;
 /// - Enforces length limit
 pub fn normalize_title(title: &str) -> Result<String> {
     let normalized = title.trim();
-    
+
     if normalized.is_empty() {
         return Err(ValidationError::TitleEmpty.into());
     }
-    
+
     if normalized.len() > MAX_TITLE_LENGTH {
         return Err(ValidationError::TitleTooLong {
             length: normalized.len(),
             max: MAX_TITLE_LENGTH,
-        }.into());
+        }
+        .into());
     }
-    
+
     Ok(normalized.to_string())
 }
 
@@ -49,18 +71,19 @@ pub fn normalize_body(body: Option<&str>) -> Result<Option<String>> {
         None => Ok(None),
         Some(text) => {
             let normalized = text.trim();
-            
+
             if normalized.is_empty() {
                 return Ok(None);
             }
-            
+
             if normalized.len() > MAX_BODY_LENGTH {
                 return Err(ValidationError::BodyTooLong {
                     length: normalized.len(),
                     max: MAX_BODY_LENGTH,
-                }.into());
+                }
+                .into());
             }
-            
+
             Ok(Some(normalized.to_string()))
         }
     }
@@ -73,25 +96,30 @@ pub fn normalize_body(body: Option<&str>) -> Result<Option<String>> {
 /// - Enforces length limit
 pub fn normalize_tag(tag: &str) -> Result<Tag> {
     let normalized = tag.trim().to_lowercase();
-    
+
     if normalized.is_empty() {
         return Err(ValidationError::TagEmpty.into());
     }
-    
+
     if normalized.len() > MAX_TAG_LENGTH {
         return Err(ValidationError::TagTooLong {
             length: normalized.len(),
             max: MAX_TAG_LENGTH,
-        }.into());
+        }
+        .into());
     }
-    
+
     // Tags must be alphanumeric with optional hyphens/underscores
-    if !normalized.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !normalized
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(ValidationError::TagInvalidCharacters {
             tag: tag.to_string(),
-        }.into());
+        }
+        .into());
     }
-    
+
     Ok(Tag::new(normalized))
 }
 
@@ -104,21 +132,22 @@ pub fn normalize_tags(tags: &[String]) -> Result<Vec<Tag>> {
         return Err(ValidationError::TooManyTags {
             count: tags.len(),
             max: MAX_TAGS,
-        }.into());
+        }
+        .into());
     }
-    
+
     let mut normalized = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    
+    let mut seen = SetImpl::new();
+
     for tag in tags {
         let normalized_tag = normalize_tag(tag)?;
-        
+
         // Skip duplicates (case-insensitive)
         if seen.insert(normalized_tag.as_str().to_string()) {
             normalized.push(normalized_tag);
         }
     }
-    
+
     Ok(normalized)
 }
 
@@ -127,16 +156,16 @@ pub fn normalize_tags(tags: &[String]) -> Result<Vec<Tag>> {
 /// - No directory separators
 pub fn validate_attachment_filename(filename: &str) -> Result<()> {
     let trimmed = filename.trim();
-    
+
     if trimmed.is_empty() {
         return Err(ValidationError::AttachmentFilenameEmpty.into());
     }
-    
+
     // Prevent directory traversal
     if trimmed.contains('/') || trimmed.contains('\\') {
         return Err(ValidationError::AttachmentFilenameEmpty.into());
     }
-    
+
     Ok(())
 }
 
@@ -146,7 +175,8 @@ pub fn validate_attachment_size(size_bytes: u64) -> Result<()> {
         return Err(ValidationError::AttachmentTooLarge {
             size: size_bytes,
             max: MAX_ATTACHMENT_SIZE,
-        }.into());
+        }
+        .into());
     }
     Ok(())
 }
@@ -157,16 +187,18 @@ pub fn validate_content_hash(hash: &str) -> Result<()> {
     if !hash.contains(':') {
         return Err(ValidationError::InvalidContentHash {
             hash: hash.to_string(),
-        }.into());
+        }
+        .into());
     }
-    
+
     let parts: Vec<&str> = hash.split(':').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         return Err(ValidationError::InvalidContentHash {
             hash: hash.to_string(),
-        }.into());
+        }
+        .into());
     }
-    
+
     Ok(())
 }
 
@@ -193,8 +225,10 @@ mod tests {
     fn test_normalize_title_empty() {
         let result = normalize_title("   ");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Validation(ValidationError::TitleEmpty)));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Validation(ValidationError::TitleEmpty)
+        ));
     }
 
     #[test]
@@ -202,8 +236,10 @@ mod tests {
         let long_title = "a".repeat(MAX_TITLE_LENGTH + 1);
         let result = normalize_title(&long_title);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Validation(ValidationError::TitleTooLong { .. })));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Validation(ValidationError::TitleTooLong { .. })
+        ));
     }
 
     #[test]
@@ -240,8 +276,10 @@ mod tests {
         let long_body = "a".repeat(MAX_BODY_LENGTH + 1);
         let result = normalize_body(Some(&long_body));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Validation(ValidationError::BodyTooLong { .. })));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Validation(ValidationError::BodyTooLong { .. })
+        ));
     }
 
     #[test]
@@ -269,8 +307,10 @@ mod tests {
     fn test_normalize_tag_empty() {
         let result = normalize_tag("   ");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Validation(ValidationError::TagEmpty)));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Validation(ValidationError::TagEmpty)
+        ));
     }
 
     #[test]
@@ -284,8 +324,10 @@ mod tests {
     fn test_normalize_tag_invalid_characters() {
         let result = normalize_tag("invalid tag!");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Validation(ValidationError::TagInvalidCharacters { .. })));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Validation(ValidationError::TagInvalidCharacters { .. })
+        ));
     }
 
     #[test]
@@ -321,8 +363,10 @@ mod tests {
         let tags: Vec<String> = (0..=MAX_TAGS).map(|i| format!("tag{}", i)).collect();
         let result = normalize_tags(&tags);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), 
-            crate::errors::DotrcError::Validation(ValidationError::TooManyTags { .. })));
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::errors::DotrcError::Validation(ValidationError::TooManyTags { .. })
+        ));
     }
 
     #[test]
