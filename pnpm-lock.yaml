@@ -14,6 +14,12 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^20.2.0
         version: 20.2.0
+      '@commitlint/cz-commitlint':
+        specifier: ^20.2.0
+        version: 20.2.0(@types/node@25.0.3)(commitizen@4.3.1(@types/node@25.0.3)(typescript@5.9.3))(inquirer@9.3.8(@types/node@25.0.3))(typescript@5.9.3)
+      '@commitlint/prompt':
+        specifier: ^20.2.0
+        version: 20.2.0(@types/node@25.0.3)(typescript@5.9.3)
       '@commitlint/prompt-cli':
         specifier: ^20.2.0
         version: 20.2.0(@types/node@25.0.3)(typescript@5.9.3)
@@ -102,6 +108,13 @@ packages:
   '@commitlint/config-validator@20.2.0':
     resolution: {integrity: sha512-SQCBGsL9MFk8utWNSthdxd9iOD1pIVZSHxGBwYIGfd67RTjxqzFOSAYeQVXOu3IxRC3YrTOH37ThnTLjUlyF2w==}
     engines: {node: '>=v18'}
+
+  '@commitlint/cz-commitlint@20.2.0':
+    resolution: {integrity: sha512-xHMmmBrKGwPPPQQS7xFYefoddB1jywTG3s6UBXQc6tRqjnAaSh2hXOyhZUhusxR16q9gqb5gxt2IAGAavfNJqA==}
+    engines: {node: '>=v18'}
+    peerDependencies:
+      commitizen: ^4.0.3
+      inquirer: ^9.0.0
 
   '@commitlint/ensure@20.2.0':
     resolution: {integrity: sha512-+8TgIGv89rOWyt3eC6lcR1H7hqChAKkpawytlq9P1i/HYugFRVqgoKJ8dhd89fMnlrQTLjA5E97/4sF09QwdoA==}
@@ -1385,6 +1398,20 @@ snapshots:
     dependencies:
       '@commitlint/types': 20.2.0
       ajv: 8.17.1
+
+  '@commitlint/cz-commitlint@20.2.0(@types/node@25.0.3)(commitizen@4.3.1(@types/node@25.0.3)(typescript@5.9.3))(inquirer@9.3.8(@types/node@25.0.3))(typescript@5.9.3)':
+    dependencies:
+      '@commitlint/ensure': 20.2.0
+      '@commitlint/load': 20.2.0(@types/node@25.0.3)(typescript@5.9.3)
+      '@commitlint/types': 20.2.0
+      chalk: 5.6.2
+      commitizen: 4.3.1(@types/node@25.0.3)(typescript@5.9.3)
+      inquirer: 9.3.8(@types/node@25.0.3)
+      lodash.isplainobject: 4.0.6
+      word-wrap: 1.2.5
+    transitivePeerDependencies:
+      - '@types/node'
+      - typescript
 
   '@commitlint/ensure@20.2.0':
     dependencies:
