@@ -5,14 +5,33 @@
   "engines": {
     "node": ">=24"
   },
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
   "scripts": {
     "lint": "pnpm lint:rust",
     "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "commitlint": "commitlint --edit",
     "dev:worker": "pnpm --filter dotrc-worker dev",
     "dev:web": "pnpm --filter dotrc-web dev",
     "build:core": "echo \"TODO: build wasm core\" && exit 0"
   },
   "devDependencies": {
-    "husky": "^9.0.0"
+    "@commitlint/cli": "^20.2.0",
+    "@commitlint/config-conventional": "^20.2.0",
+    "@commitlint/prompt-cli": "^20.2.0",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "husky": "^9.1.7"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  },
+  "husky": {
+    "hooks": {
+      "prepare-commit-msg": "exec < /dev/tty && npx cz --hook || true"
+    }
   }
 }
