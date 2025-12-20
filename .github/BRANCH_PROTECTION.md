@@ -9,7 +9,7 @@ To enforce code quality and release discipline, configure these branch protectio
    - ✅ **Require status checks to pass before merging**
      - CI (Rust tests)
      - Validate PR Title (conventional commits)
-     - Release Please (opened automatically)
+     - Release Please (automated workflow; runs on push to `main`, not a PR status check)
    - ✅ **Require branches to be up to date before merging**
    - ✅ **Require pull request reviews before merging** (optional, 1 approval recommended)
    - ✅ **Require conversation resolution before merging**
