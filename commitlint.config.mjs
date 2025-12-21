@@ -30,8 +30,6 @@ export default {
       2,
       "always",
       [
-        "repo",
-        "infra",
         "core",
         "wasm",
         "server",
@@ -39,6 +37,9 @@ export default {
         "web",
         "sdk",
         "docs",
+        "repo",
+        "infra",
+        "deps",
       ],
     ],
     "subject-case": [2, "never", ["start-case", "pascal-case", "upper-case"]],
@@ -120,18 +121,6 @@ export default {
       scope: {
         description: "Select the area (scope) this change touches",
         enum: {
-          repo: {
-            description:
-              "Repository-wide changes: configs, root docs, workspace maintenance",
-            title: "Repo",
-            emoji: "📁",
-          },
-          infra: {
-            description:
-              "Infrastructure: CI/CD, runners, workflows, deployment scripts",
-            title: "Infra",
-            emoji: "🛠️",
-          },
           core: {
             description: "dotrc-core: pure Rust domain & policy engine",
             title: "Core",
@@ -166,6 +155,23 @@ export default {
             description: "Documentation changes in docs/",
             title: "Docs",
             emoji: "📖",
+          },
+          repo: {
+            description:
+              "Repository-wide changes: configs, root docs, workspace maintenance",
+            title: "Repo",
+            emoji: "📁",
+          },
+          infra: {
+            description:
+              "Infrastructure: CI/CD, runners, workflows, deployment scripts",
+            title: "Infra",
+            emoji: "🛠️",
+          },
+          deps: {
+            description: "Dependency updates",
+            title: "Dependencies",
+            emoji: "⬆️ ",
           },
         },
       },
