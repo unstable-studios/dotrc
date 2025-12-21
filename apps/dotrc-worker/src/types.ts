@@ -68,6 +68,12 @@ export interface AuthContext {
 
 // WASM Result types
 
+export type DotrcErrorKind =
+  | "Validation"
+  | "Authorization"
+  | "Link"
+  | "ServerError";
+
 export type WasmResultOk<T> = {
   type: "ok";
   data: T;
@@ -75,12 +81,7 @@ export type WasmResultOk<T> = {
 
 export type WasmResultErr = {
   type: "err";
-  kind:
-    | "validation"
-    | "authorization"
-    | "invalid_link"
-    | "parse_error"
-    | "not_implemented";
+  kind: DotrcErrorKind;
   message: string;
 };
 
@@ -118,7 +119,7 @@ export interface LinkGrants {
 // Error handling utilities
 
 export class DotrcError extends Error {
-  constructor(public kind: WasmResultErr["kind"], message: string) {
+  constructor(public kind: DotrcErrorKind, message: string) {
     super(message);
     this.name = "DotrcError";
   }
