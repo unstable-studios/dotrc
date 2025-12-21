@@ -22,8 +22,10 @@ fmt:
 
 lint:
 	cargo clippy --all-targets --all-features -- -D warnings || true
+	@echo "Type-checking TypeScript..."
+	cd apps/dotrc-worker && pnpm tsc --noEmit
 
-test: test-rust test-wasm
+test: test-rust test-wasm test-worker
 	@echo "✓ All tests passed"
 
 test-rust:
@@ -33,6 +35,10 @@ test-rust:
 test-wasm: build-wasm
 	@echo "Running WASM integration tests..."
 	node crates/dotrc-core-wasm/tests/integration.mjs
+
+test-worker:
+	@echo "Running worker tests..."
+	cd apps/dotrc-worker && pnpm test
 
 test-core:
 	cargo test -p dotrc-core

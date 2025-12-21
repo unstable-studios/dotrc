@@ -8,11 +8,11 @@ cd "$(dirname "$0")/../crates/dotrc-core-wasm"
 # Build WASM module
 cargo build --target wasm32-unknown-unknown --release
 
-# Generate bindings
+# Generate bindings for Cloudflare Workers using bundler target
 mkdir -p pkg
 wasm-bindgen ../../target/wasm32-unknown-unknown/release/dotrc_core_wasm.wasm \
   --out-dir pkg \
-  --target web
+  --target bundler
 
 echo "✓ WASM build complete at crates/dotrc-core-wasm/pkg/"
 echo "  Run tests: node crates/dotrc-core-wasm/tests/integration.mjs"

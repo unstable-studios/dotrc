@@ -138,11 +138,30 @@ Requires Postgres, object storage (S3-compatible), and config via env vars/confi
 
 ## Developing across layers
 
-- Core tests: `cargo test -p dotrc-core`
-- Lint (pre-commit uses this): `pnpm lint` (runs `cargo fmt --all --check` + `cargo clippy --workspace --all-targets --all-features -D warnings`)
-- Worker dev: `pnpm --filter dotrc-worker dev`
-- Web dev: `pnpm --filter dotrc-web dev`
-- WASM rebuild: `pnpm build:core`
+```bash
+# Run all tests (Rust + WASM + Worker)
+make test
+
+# Run individual test suites
+make test-rust      # Core domain logic (91 tests)
+make test-wasm      # WASM bindings (1 integration test)
+make test-worker    # HTTP handler + TypeScript (18 tests)
+
+# Type-check TypeScript
+make lint
+
+# Build WASM
+make build-wasm
+
+# Dev servers
+make dev-worker     # Cloudflare Worker at :8787
+make dev-web        # Web UI
+
+# Full help
+make help
+```
+
+**See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed testing guide.**
 
 ## What not to do
 
