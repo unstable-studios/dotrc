@@ -1,21 +1,17 @@
 // Simple integration test for WASM bindings
 
-import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import init, { core_version, wasm_create_dot } from "../pkg/dotrc_core_wasm.js";
+import { dirname } from "path";
+
+// Import functions directly from the bundler target
+// The bundler target automatically initializes the WASM module
+import { core_version, wasm_create_dot } from "../pkg/dotrc_core_wasm.js";
 
 // Get the directory of this test file
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Initialize WASM module with the .wasm file
-const wasmBytes = await readFile(
-  join(__dirname, "../pkg/dotrc_core_wasm_bg.wasm")
-);
-await init(wasmBytes);
-
-// Test basic functionality
+// Test basic functionality (WASM is already initialized by the bundler target)
 console.log("Core version:", core_version());
 
 // Test create_dot
