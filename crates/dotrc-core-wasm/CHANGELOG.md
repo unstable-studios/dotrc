@@ -4,5 +4,6 @@
 
 ### Features
 
+- First release using release-please
 - WASM wrapper for dotrc-core
 - wasm-bindgen bindings for Cloudflare Workers
