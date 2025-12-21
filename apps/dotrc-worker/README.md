@@ -37,6 +37,10 @@ This worker provides a REST API that:
 # Install dependencies (from repo root)
 pnpm install
 
+# Type-check TypeScript
+make lint
+# or: pnpm typecheck (in this directory)
+
 # Build WASM (required before running worker)
 ./scripts/build-wasm.sh
 

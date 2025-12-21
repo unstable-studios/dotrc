@@ -22,6 +22,8 @@ fmt:
 
 lint:
 	cargo clippy --all-targets --all-features -- -D warnings || true
+	@echo "Type-checking TypeScript..."
+	cd apps/dotrc-worker && pnpm tsc --noEmit
 
 test: test-rust test-wasm
 	@echo "✓ All tests passed"
