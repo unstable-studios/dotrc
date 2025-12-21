@@ -1,7 +1,5 @@
 # WASM Layer Implementation Summary
 
-## What Was Built
-
 A production-ready WASM bridge between `dotrc-core` (pure Rust) and JavaScript/TypeScript environments.
 
 ### Files Created/Modified
@@ -57,10 +55,21 @@ A production-ready WASM bridge between `dotrc-core` (pure Rust) and JavaScript/T
 **Why**: Type-safe error handling in TypeScript
 
 ```typescript
+type DotrcErrorKind = "Validation" | "Authorization" | "Link" | "ServerError";
+
 type WasmResult<T> =
   | { type: "ok"; data: T }
-  | { type: "err"; kind: string; message: string };
+  | { type: "err"; kind: DotrcErrorKind; message: string };
 ```
+
+Error kinds flow from Rust core → WASM → TypeScript with consistent semantics:
+
+- **Validation**: Bad input (HTTP 400)
+- **Authorization**: Permission denied (HTTP 403)
+- **Link**: Invalid link operation (HTTP 500)
+- **ServerError**: Unexpected failures (HTTP 500)
+
+This enables type-safe error handling without brittle string matching.
 
 ### 4. Small Binary Optimizations
 

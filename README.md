@@ -135,6 +135,7 @@ Requires Postgres, object storage (S3-compatible), and config via env vars/confi
 - Visibility is explicit via ACL snapshots + grants
 - Links express meaning; chains are derived
 - Adapters gather facts → core decides → adapters persist
+- Errors flow as typed kinds (Validation/Authorization/Link/ServerError) from core through WASM to adapters
 
 ## Developing across layers
 

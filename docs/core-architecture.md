@@ -134,8 +134,29 @@ Rich error types for clear failure modes:
 - `ValidationError` — Invalid input (title too long, bad tags, etc.)
 - `AuthorizationError` — Permission denied
 - `InvalidLinkError` — Self-reference, cross-tenant, duplicate
+- `ServerError` — Unexpected internal errors (parse failures, etc.)
 
 Errors include context (IDs, limits) for debugging.
+
+**Error Kind Classification:**
+
+All errors expose a `.kind()` method returning a `DotrcErrorKind` enum:
+
+```rust
+pub enum DotrcErrorKind {
+    Validation,    // Client error: bad input
+    Authorization, // Client error: insufficient permissions
+    Link,          // Server error: invalid link operation
+    ServerError,   // Server error: unexpected failures
+}
+```
+
+**Purpose**: Enable adapters to map errors to appropriate HTTP status codes or UI messaging without string matching:
+
+- `Validation` → HTTP 400 Bad Request
+- `Authorization` → HTTP 403 Forbidden
+- `Link` → HTTP 500 Internal Server Error
+- `ServerError` → HTTP 500 Internal Server Error
 
 ### `normalize.rs` — Validation & Canonicalization
 
