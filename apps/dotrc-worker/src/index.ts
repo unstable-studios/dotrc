@@ -12,9 +12,9 @@ import {
 // @ts-expect-error - WASM module will be bundled
 import * as wasm from "../../crates/dotrc-core-wasm/pkg/dotrc_core_wasm.js";
 
-type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
-type JsonObject = { [key: string]: JsonValue };
-type JsonArray = JsonValue[];
+export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+export type JsonObject = { [key: string]: JsonValue };
+export type JsonArray = JsonValue[];
 
 // Minimal D1 typings to avoid external deps
 interface D1Result<T = unknown> {

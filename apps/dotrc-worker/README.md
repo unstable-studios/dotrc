@@ -41,6 +41,10 @@ pnpm install
 make lint
 # or: pnpm typecheck (in this directory)
 
+# Run tests
+pnpm test
+# or: make test-worker (from repo root, runs all tests)
+
 # Build WASM (required before running worker)
 ./scripts/build-wasm.sh
 
@@ -55,39 +59,183 @@ The dev server will start at `http://localhost:8787`
 
 ### Health Check
 
+**Request:**
+
 ```bash
-GET /
-→ 200 { "status": "ok", "service": "dotrc-worker" }
+curl http://localhost:8787/
+```
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "service": "dotrc-worker"
+}
 ```
 
 ### Create Dot
 
+**Request:**
+
 ```bash
-POST /dots
-Headers:
-  x-tenant-id: tenant-123
-  x-user-id: user-456
-Body:
-  {
+curl -X POST http://localhost:8787/dots \
+  -H "x-tenant-id: tenant-123" \
+  -H "x-user-id: user-456" \
+  -H "content-type: application/json" \
+  -d '{
     "title": "Meeting notes",
     "body": "Discussed Q1 roadmap",
     "tags": ["meeting", "planning"],
     "scope_id": "slack-channel-123",
     "visible_to_users": ["user-456"],
     "visible_to_scopes": ["slack-channel-123"]
-  }
+  }'
+```
 
-→ 201 {
-  "dot": { ... },
-  "grants": 2
+**Response (201 Created):**
+
+```json
+{
+  "dot_id": "dot-1234567890ab",
+  "created_at": "2025-12-20T21:33:00Z",
+  "grants_count": 3
 }
 ```
 
-**Auth (temporary):**
+**Error: Missing Auth (401):**
 
-- `x-tenant-id` header required
-- `x-user-id` header required
-- TODO: Replace with JWT or Slack OAuth
+```json
+{
+  "error": "unauthorized",
+  "detail": "Missing tenant or user authentication"
+}
+```
+
+**Error: Invalid JSON (400):**
+
+```json
+{
+  "error": "invalid_json",
+  "detail": "Unexpected token"
+}
+```
+
+**Error: Validation (400):**
+
+```json
+{
+  "error": "validation_failed",
+  "detail": "title is required"
+}
+```
+
+### Request Format
+
+All requests should include:
+
+- `x-tenant-id` header (required)
+- `x-user-id` header (required)
+- `content-type: application/json` for POST requests
+
+### Response Format
+
+All responses include:
+
+- `content-type: application/json; charset=utf-8`
+- Appropriate HTTP status code
+- JSON body with either data or error fields
+
+## Flow Diagrams
+
+### POST /dots Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Worker
+    participant DotrcCore as DotrcCore (WASM)
+    participant D1 as D1 Database
+
+    Client->>Worker: POST /dots + auth headers
+    activate Worker
+
+    Worker->>Worker: Parse auth context
+    Worker->>Worker: Validate request body
+
+    alt Auth missing
+        Worker-->>Client: 401 Unauthorized
+    else Invalid JSON
+        Worker-->>Client: 400 Invalid JSON
+    else Invalid body format
+        Worker-->>Client: 400 Invalid body
+    end
+
+    Worker->>DotrcCore: createDot(draft, timestamp, id)
+    activate DotrcCore
+
+    DotrcCore->>DotrcCore: Validate dot fields
+    DotrcCore->>DotrcCore: Create visibility grants
+    DotrcCore-->>Worker: { dot, grants, links }
+    deactivate DotrcCore
+
+    alt Validation error
+        Worker-->>Client: 400 Validation Failed
+    end
+
+    Worker->>D1: INSERT dot, grants, links
+    Worker-->>Client: 201 { dot_id, created_at, grants_count }
+    deactivate Worker
+```
+
+### Auth Context
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Worker
+
+    Client->>Client: Generate auth headers
+    Client->>Worker: x-tenant-id: "tenant-123"<br/>x-user-id: "user-456"
+
+    Worker->>Worker: parseTenantId(request)
+    Worker->>Worker: parseUserId(request)
+    Worker->>Worker: Validate not null/empty
+
+    alt Auth valid
+        Worker->>Worker: Continue processing
+    else Auth missing
+        Worker-->>Client: 401 Unauthorized
+    end
+```
+
+### Core Policy Decision
+
+```mermaid
+sequenceDiagram
+    participant Worker
+    participant DotrcCore as DotrcCore (WASM)
+
+    Worker->>DotrcCore: createDot(draft, timestamp, dotId)
+    activate DotrcCore
+
+    DotrcCore->>DotrcCore: Normalize fields
+    DotrcCore->>DotrcCore: Validate required fields
+    DotrcCore->>DotrcCore: Create visibility grants
+
+    alt visible_to_users specified
+        DotrcCore->>DotrcCore: Add user grants
+    else empty
+        DotrcCore->>DotrcCore: Default to creator only
+    end
+
+    alt visible_to_scopes specified
+        DotrcCore->>DotrcCore: Add scope grants
+    end
+
+    DotrcCore-->>Worker: { dot, grants: [...], links: [] }
+    deactivate DotrcCore
+```
 
 ## WASM Integration
 
