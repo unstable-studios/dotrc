@@ -34,7 +34,7 @@ test-rust:
 
 test-wasm: build-wasm
 	@echo "Running WASM integration tests..."
-	node crates/dotrc-core-wasm/tests/integration.mjs
+	node --no-warnings=ExperimentalWarning crates/dotrc-core-wasm/tests/integration.mjs
 
 test-worker:
 	@echo "Running worker tests..."
