@@ -31,6 +31,8 @@ This worker provides a REST API that:
 - Additional endpoints (grant access, create links, query dots)
 - Error handling improvements
 
+**Persistence note:** D1 is not wired yet. Responses come from in-memory core results only; data is not stored between runs.
+
 ## Development
 
 ```bash
@@ -51,6 +53,11 @@ pnpm test
 # Run locally
 make dev-worker
 # or: cd apps/dotrc-worker && pnpm dev
+
+# Quick smoke tests (requires worker running)
+cd apps/dotrc-worker
+chmod +x scripts/smoke.sh
+./scripts/smoke.sh
 ```
 
 The dev server will start at `http://localhost:8787`
