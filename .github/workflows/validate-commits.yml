@@ -1,6 +1,9 @@
 name: Conventional Commits Validation
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read

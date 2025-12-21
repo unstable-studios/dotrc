@@ -4,4 +4,5 @@
 
 ### Features
 
+- First release using release-please
 - Cloudflare Workers adapter (placeholder)

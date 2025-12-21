@@ -4,4 +4,5 @@
 
 ### Features
 
+- First release using release-please
 - Self-hosted server runtime (placeholder)

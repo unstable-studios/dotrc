@@ -4,6 +4,7 @@
 
 ### Features
 
+- First release using release-please
 - Pure domain engine with no_std support
 - Immutable dots with append-only history
 - Explicit ACL snapshots and visibility grants
