@@ -162,9 +162,13 @@ pub enum DotrcErrorKind {
 - `Link` → HTTP 500 Internal Server Error
 - `ServerError` → HTTP 500 Internal Server Error
 
-**Error Kind Classification:**
+2. **`DotrcErrorKind` enum** — Classification for HTTP status mapping:
+   - `Validation` — Client errors (HTTP 400)
+   - `Authorization` — Permission errors (HTTP 403)
+   - `Link` — Link operation errors (HTTP 500)
+   - `ServerError` — Unexpected/unimplemented (HTTP 500)
 
-All errors expose a `.kind()` method returning a `DotrcErrorKind` enum:
+All `DotrcError` variants expose a `.kind()` method for classification:
 
 ```rust
 pub enum DotrcErrorKind {
