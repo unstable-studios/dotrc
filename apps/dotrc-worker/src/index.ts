@@ -9,10 +9,19 @@ import {
 } from "./utils";
 
 // Import WASM module
-// @ts-expect-error - WASM module will be bundled
-import * as wasm from "../../crates/dotrc-core-wasm/pkg/dotrc_core_wasm.js";
+// Note: path resolves from apps/dotrc-worker/src → repo root → crates
+// The default export initializes the WASM module; named exports provide bound functions
+import initWasm, * as wasm from "../../../crates/dotrc-core-wasm/pkg/dotrc_core_wasm.js";
+// Import the compiled WASM binary directly for modules-based workers
+import wasmModule from "../../../crates/dotrc-core-wasm/pkg/dotrc_core_wasm_bg.wasm";
 
-export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonObject
+  | JsonArray;
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonArray = JsonValue[];
 
@@ -33,6 +42,9 @@ interface D1Database {
 interface Env {
   DB: D1Database;
 }
+
+// Lazy WASM initialization (requires env binding for the module)
+let wasmReady: Promise<unknown> | null = null;
 
 // Initialize WASM core wrapper
 const core = new DotrcCore(wasm);
@@ -64,6 +76,16 @@ function parsePath(url: URL): string[] {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Ensure WASM is initialized before handling any request
+    if (!wasmReady) {
+      try {
+        wasmReady = initWasm(wasmModule);
+      } catch (e) {
+        console.error("dotrc-core-wasm init failed:", e);
+        return json(500, { error: "internal_error", detail: "WASM init failed" });
+      }
+    }
+    await wasmReady;
     const url = new URL(request.url);
     const segments = parsePath(url);
 
