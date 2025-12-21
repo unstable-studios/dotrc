@@ -1,0 +1,6 @@
+{
+  "crates/dotrc-core": "0.1.0",
+  "crates/dotrc-core-wasm": "0.1.0",
+  "crates/dotrc-server": "0.1.0",
+  "apps/dotrc-worker": "0.1.0"
+}

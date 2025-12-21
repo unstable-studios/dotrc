@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Launch commitizen prompt for git commit
+exec < /dev/tty && pnpm cz --hook || true
