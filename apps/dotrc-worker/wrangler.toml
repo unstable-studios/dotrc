@@ -2,8 +2,9 @@ name = "dotrc-worker"
 main = "src/index.ts"
 compatibility_date = "2025-12-20"
 
-# Bindings (fill in later)
+# Bindings
+# TODO: create the D1 database and fill in values below
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "dotrc"
-# database_id = "..."
+# database_id = "REPLACE_WITH_D1_ID"
