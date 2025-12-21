@@ -9,4 +9,4 @@ std = ["serde/std", "thiserror"]
 
 [dependencies]
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
-thiserror = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
