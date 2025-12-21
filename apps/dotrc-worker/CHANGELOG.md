@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v0.1.0...dotrc-worker-v0.2.0) (2025-12-21)
+
+
+### Features
+
+* **wasm:** implement JSON-based WASM bindings ([#5](https://github.com/unstable-studios/dotrc/issues/5)) ([fb047b2](https://github.com/unstable-studios/dotrc/commit/fb047b2201f843d6539d21a066d88324a4dac10f))
+* **worker:** implement worker layer ([#7](https://github.com/unstable-studios/dotrc/issues/7)) ([8d9734d](https://github.com/unstable-studios/dotrc/commit/8d9734d96696d925355a988ad7e45c7daabb03f6))
+
 ## [0.1.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v0.1.0...dotrc-worker-v0.1.0) (2025-12-21)
 
 
