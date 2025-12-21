@@ -162,6 +162,26 @@ pub enum DotrcErrorKind {
 - `Link` → HTTP 500 Internal Server Error
 - `ServerError` → HTTP 500 Internal Server Error
 
+**Error Kind Classification:**
+
+All errors expose a `.kind()` method returning a `DotrcErrorKind` enum:
+
+```rust
+pub enum DotrcErrorKind {
+    Validation,    // Client error: bad input
+    Authorization, // Client error: insufficient permissions
+    Link,          // Server error: invalid link operation
+    ServerError,   // Server error: unexpected failures
+}
+```
+
+**Purpose**: Enable adapters to map errors to appropriate HTTP status codes or UI messaging without string matching:
+
+- `Validation` → HTTP 400 Bad Request
+- `Authorization` → HTTP 403 Forbidden
+- `Link` → HTTP 500 Internal Server Error
+- `ServerError` → HTTP 500 Internal Server Error
+
 ### `normalize.rs` — Validation & Canonicalization
 
 Pure functions to normalize and validate:
