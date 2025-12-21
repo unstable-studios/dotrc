@@ -6,7 +6,10 @@ members = [
   "crates/dotrc-server"
 ]
 
-# Optimize WASM binary for size (only opt-level can be per-package)
+# Optimize WASM binary for size in release builds
+[profile.release]
+strip = true
+
+# Per-package optimization: only opt-level can be set per-package
 [profile.release.package.dotrc-core-wasm]
 opt-level = "z"
-strip = true

@@ -25,7 +25,7 @@ export type JsonValue =
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonArray = JsonValue[];
 
-// Minimal D1 typings to avoid external deps
+// D1 database binding (optional, persistence not yet wired)
 interface D1Result<T = unknown> {
   success: boolean;
   error?: string;
@@ -40,7 +40,8 @@ interface D1Database {
 }
 
 interface Env {
-  DB: D1Database;
+  // Optional: D1 database binding will be configured when persistence is implemented
+  DB?: D1Database;
 }
 
 // Lazy WASM initialization (requires env binding for the module)
@@ -82,7 +83,10 @@ export default {
         wasmReady = initWasm(wasmModule);
       } catch (e) {
         console.error("dotrc-core-wasm init failed:", e);
-        return json(500, { error: "internal_error", detail: "WASM init failed" });
+        return json(500, {
+          error: "internal_error",
+          detail: "WASM init failed",
+        });
       }
     }
     await wasmReady;
@@ -131,9 +135,19 @@ export default {
 
       const payload = body as Record<string, JsonValue>;
 
+      // Validate required fields before building draft
+      const title =
+        typeof payload.title === "string" ? payload.title.trim() : "";
+      if (!title) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Missing or empty 'title' field",
+        });
+      }
+
       // Build dot draft
       const draft: DotDraft = {
-        title: typeof payload.title === "string" ? payload.title : "",
+        title,
         body: typeof payload.body === "string" ? payload.body : undefined,
         created_by: userId,
         tenant_id: tenantId,
@@ -167,13 +181,33 @@ export default {
           dot_id: result.dot.id,
           created_at: result.dot.created_at,
           grants_count: result.grants.length,
+          links_count: result.links.length,
         });
       } catch (err: unknown) {
-        // Handle DotrcError
+        // Handle errors from core with appropriate HTTP status codes
         if (err instanceof Error) {
-          return json(400, {
-            error: "validation_failed",
-            detail: err.message,
+          // Check error message for validation vs authorization vs other issues
+          // In future, use instanceof DotrcError with error.kind field for better type checking
+          const errorMsg = err.message.toLowerCase();
+          const isValidation =
+            errorMsg.includes("invalid") || errorMsg.includes("required");
+          const isAuth =
+            errorMsg.includes("unauthorized") || errorMsg.includes("forbidden");
+
+          const status = isAuth ? 403 : isValidation ? 400 : 500;
+
+          return json(status, {
+            error: isAuth
+              ? "unauthorized"
+              : isValidation
+              ? "validation_failed"
+              : "internal_error",
+            // For client errors (4xx), return the actual error message for better debugging.
+            // For server errors (5xx), avoid leaking internal details.
+            detail:
+              status >= 400 && status < 500
+                ? err.message
+                : "Request processing failed",
           });
         }
         return json(500, {

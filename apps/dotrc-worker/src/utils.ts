@@ -23,29 +23,69 @@ export function now(): string {
 }
 
 /**
- * Parse tenant ID from request (from header, subdomain, or body)
- * For now, extract from x-tenant-id header or default
+ * Parse tenant ID from request.
+ *
+ * ⚠️  SECURITY CRITICAL ⚠️
+ * The current implementation accepts x-tenant-id directly from client headers.
+ * This is INSECURE and must NEVER be used in production, as it allows
+ * arbitrary tenant impersonation and breaks multi-tenant isolation.
+ *
+ * Proper implementations MUST derive tenant ID from a verified, authenticated
+ * context such as:
+ * - Validated JWT claim
+ * - Cloudflare Access authenticated request
+ * - OAuth token verification
+ * - Trusted subdomain routing
+ *
+ * Validation applied:
+ * - Length: 1-256 characters
+ * - Characters: alphanumeric, hyphens, underscores only (prevents injection)
+ *
+ * This temporary implementation is for development/testing ONLY.
  */
 export function parseTenantId(request: Request): string | null {
   const header = request.headers.get("x-tenant-id");
-  if (header) {
-    return header;
+  if (!header || header.length === 0 || header.length > 256) {
+    return null;
   }
-  // TODO: Parse from subdomain or JWT
-  return null;
+  // Whitelist validation: allow only alphanumeric, hyphens, underscores
+  if (!/^[a-zA-Z0-9_-]+$/.test(header)) {
+    return null;
+  }
+  return header;
 }
 
 /**
- * Parse user ID from request (from auth token)
- * For now, extract from x-user-id header or default
+ * Parse user ID from request.
+ *
+ * ⚠️  SECURITY CRITICAL ⚠️
+ * The current implementation accepts x-user-id directly from client headers.
+ * This is INSECURE and must NEVER be used in production, as it allows
+ * arbitrary user impersonation and authorization bypass.
+ *
+ * Proper implementations MUST derive user ID from a verified, authenticated
+ * context such as:
+ * - Validated JWT/OIDC token
+ * - Slack OAuth token
+ * - Cloudflare Access authentication
+ * - Session token verification
+ *
+ * Validation applied:
+ * - Length: 1-256 characters
+ * - Characters: alphanumeric, hyphens, underscores only (prevents injection)
+ *
+ * This temporary implementation is for development/testing ONLY.
  */
 export function parseUserId(request: Request): string | null {
   const header = request.headers.get("x-user-id");
-  if (header) {
-    return header;
+  if (!header || header.length === 0 || header.length > 256) {
+    return null;
   }
-  // TODO: Parse from JWT or Slack auth
-  return null;
+  // Whitelist validation: allow only alphanumeric, hyphens, underscores
+  if (!/^[a-zA-Z0-9_-]+$/.test(header)) {
+    return null;
+  }
+  return header;
 }
 
 /**

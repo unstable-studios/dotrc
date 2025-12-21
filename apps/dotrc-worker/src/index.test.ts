@@ -8,11 +8,6 @@ const mockWasm = {
   wasm_filter_visible_dots: vi.fn(),
 };
 
-// Mock D1
-const mockD1 = {
-  prepare: vi.fn(),
-};
-
 // Parse JSON response from worker Response object
 async function parseResponse(response: Response): Promise<JsonValue> {
   const text = await response.text();
@@ -26,10 +21,6 @@ describe("Worker Handler", () => {
 
   describe("GET /", () => {
     it("returns health check", async () => {
-      const request = new Request("http://localhost:8787/", {
-        method: "GET",
-      });
-
       // Simulate the health check handler
       const response = new Response(
         JSON.stringify({ status: "ok", service: "dotrc-worker" }),
@@ -48,15 +39,6 @@ describe("Worker Handler", () => {
 
   describe("POST /dots", () => {
     it("creates dot with valid input", async () => {
-      const payload = {
-        title: "My Fact",
-        body: "This is important",
-        scope_id: "scope-123",
-        tags: ["personal", "archive"],
-        visible_to_users: ["user-456"],
-        visible_to_scopes: ["scope-789"],
-      };
-
       // Mock core response
       mockWasm.wasm_create_dot.mockReturnValue(
         JSON.stringify({
