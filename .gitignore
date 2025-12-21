@@ -34,6 +34,7 @@ Cargo.lock
 # --- WASM ---
 *.wasm
 *.wat
+crates/dotrc-core-wasm/pkg/
 
 # --- Cloudflare Wrangler ---
 .wrangler/
