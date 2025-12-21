@@ -24,7 +24,7 @@ jobs:
             run: cargo build -p dotrc-core-wasm --target wasm32-unknown-unknown --release
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
