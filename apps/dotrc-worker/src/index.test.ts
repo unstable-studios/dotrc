@@ -238,6 +238,84 @@ describe("Worker Handler", () => {
       const body = (await parseResponse(response)) as JsonObject;
       expect(body.error).toBe("internal_error");
     });
+
+    it("returns 400 for Validation error kind", async () => {
+      const response = new Response(
+        JSON.stringify({
+          error: "validation_failed",
+          kind: "Validation",
+          detail: "title is required",
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        }
+      );
+
+      expect(response.status).toBe(400);
+      const body = (await parseResponse(response)) as JsonObject;
+      expect(body.error).toBe("validation_failed");
+      expect(body.kind).toBe("Validation");
+    });
+
+    it("returns 403 for Authorization error kind", async () => {
+      const response = new Response(
+        JSON.stringify({
+          error: "unauthorized",
+          kind: "Authorization",
+          detail: "user does not have permission",
+        }),
+        {
+          status: 403,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        }
+      );
+
+      expect(response.status).toBe(403);
+      const body = (await parseResponse(response)) as JsonObject;
+      expect(body.error).toBe("unauthorized");
+      expect(body.kind).toBe("Authorization");
+    });
+
+    it("returns 500 for Link error kind", async () => {
+      const response = new Response(
+        JSON.stringify({
+          error: "internal_error",
+          kind: "Link",
+          detail: "Request processing failed",
+        }),
+        {
+          status: 500,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        }
+      );
+
+      expect(response.status).toBe(500);
+      const body = (await parseResponse(response)) as JsonObject;
+      expect(body.error).toBe("internal_error");
+      expect(body.kind).toBe("Link");
+      expect(body.detail).toBe("Request processing failed");
+    });
+
+    it("returns 500 for ServerError error kind", async () => {
+      const response = new Response(
+        JSON.stringify({
+          error: "internal_error",
+          kind: "ServerError",
+          detail: "Request processing failed",
+        }),
+        {
+          status: 500,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        }
+      );
+
+      expect(response.status).toBe(500);
+      const body = (await parseResponse(response)) as JsonObject;
+      expect(body.error).toBe("internal_error");
+      expect(body.kind).toBe("ServerError");
+      expect(body.detail).toBe("Request processing failed");
+    });
   });
 
   describe("404 Not Found", () => {
