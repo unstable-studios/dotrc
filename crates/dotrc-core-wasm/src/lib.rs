@@ -124,6 +124,25 @@ struct LinkGrantsInput {
     to: Vec<VisibilityGrant>,
 }
 
+/// Input format for AuthContext deserialization
+#[derive(Deserialize)]
+struct AuthContextInput {
+    requesting_user: String,
+    user_scope_memberships: Vec<String>,
+}
+
+impl AuthContextInput {
+    fn into_auth_context(self) -> AuthContext {
+        AuthContext::new(
+            UserId::new(self.requesting_user),
+            self.user_scope_memberships
+                .into_iter()
+                .map(ScopeId::new)
+                .collect(),
+        )
+    }
+}
+
 // ============================================================================
 // WASM Exports
 // ============================================================================
@@ -232,12 +251,6 @@ pub fn wasm_grant_access(
         }
     };
 
-    #[derive(Deserialize)]
-    struct AuthContextInput {
-        requesting_user: String,
-        user_scope_memberships: Vec<String>,
-    }
-
     let context_input: AuthContextInput = match serde_json::from_str(context_json) {
         Ok(c) => c,
         Err(e) => {
@@ -249,14 +262,7 @@ pub fn wasm_grant_access(
         }
     };
 
-    let context = AuthContext::new(
-        UserId::new(context_input.requesting_user),
-        context_input
-            .user_scope_memberships
-            .into_iter()
-            .map(ScopeId::new)
-            .collect(),
-    );
+    let context = context_input.into_auth_context();
 
     let target_users = target_user_ids.into_iter().map(UserId::new).collect();
     let target_scopes = target_scope_ids.into_iter().map(ScopeId::new).collect();
@@ -359,12 +365,6 @@ pub fn wasm_create_link(
         }
     };
 
-    #[derive(Deserialize)]
-    struct AuthContextInput {
-        requesting_user: String,
-        user_scope_memberships: Vec<String>,
-    }
-
     let context_input: AuthContextInput = match serde_json::from_str(context_json) {
         Ok(c) => c,
         Err(e) => {
@@ -376,14 +376,7 @@ pub fn wasm_create_link(
         }
     };
 
-    let context = AuthContext::new(
-        UserId::new(context_input.requesting_user),
-        context_input
-            .user_scope_memberships
-            .into_iter()
-            .map(ScopeId::new)
-            .collect(),
-    );
+    let context = context_input.into_auth_context();
 
     let clock = InjectedClock {
         timestamp: now.to_string(),
@@ -441,12 +434,6 @@ pub fn wasm_can_view_dot(dot_json: &str, grants_json: &str, context_json: &str) 
         }
     };
 
-    #[derive(Deserialize)]
-    struct AuthContextInput {
-        requesting_user: String,
-        user_scope_memberships: Vec<String>,
-    }
-
     let context_input: AuthContextInput = match serde_json::from_str(context_json) {
         Ok(c) => c,
         Err(e) => {
@@ -458,14 +445,7 @@ pub fn wasm_can_view_dot(dot_json: &str, grants_json: &str, context_json: &str) 
         }
     };
 
-    let context = AuthContext::new(
-        UserId::new(context_input.requesting_user),
-        context_input
-            .user_scope_memberships
-            .into_iter()
-            .map(ScopeId::new)
-            .collect(),
-    );
+    let context = context_input.into_auth_context();
 
     let can_view = can_view_dot(&dot, &grants, &context).is_ok();
     WasmResult::ok(CanViewDotOutput { can_view })
@@ -504,12 +484,6 @@ pub fn wasm_filter_visible_dots(dots_json: &str, grants_json: &str, context_json
         }
     };
 
-    #[derive(Deserialize)]
-    struct AuthContextInput {
-        requesting_user: String,
-        user_scope_memberships: Vec<String>,
-    }
-
     let context_input: AuthContextInput = match serde_json::from_str(context_json) {
         Ok(c) => c,
         Err(e) => {
@@ -521,14 +495,7 @@ pub fn wasm_filter_visible_dots(dots_json: &str, grants_json: &str, context_json
         }
     };
 
-    let context = AuthContext::new(
-        UserId::new(context_input.requesting_user),
-        context_input
-            .user_scope_memberships
-            .into_iter()
-            .map(ScopeId::new)
-            .collect(),
-    );
+    let context = context_input.into_auth_context();
 
     let visible_dots = filter_visible_dots(dots, &grants, &context);
     WasmResult::ok(FilterVisibleDotsOutput { dots: visible_dots })
