@@ -16,11 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
       - name: Run cargo audit
-        run: cargo audit
+        uses: actions-rust-lang/audit@v1
 
   npm-audit:
     name: npm Audit
@@ -29,6 +26,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        run: npm install -g pnpm
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -36,8 +36,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Run pnpm audit
         run: pnpm audit --audit-level=moderate
