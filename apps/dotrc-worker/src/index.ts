@@ -1,3 +1,17 @@
+import { DotrcCore } from "./core";
+import type { DotDraft, AuthContext } from "./types";
+import {
+  generateDotId,
+  now,
+  parseTenantId,
+  parseUserId,
+  parseScopeMemberships,
+} from "./utils";
+
+// Import WASM module
+// @ts-expect-error - WASM module will be bundled
+import * as wasm from "../../crates/dotrc-core-wasm/pkg/dotrc_core_wasm.js";
+
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
 type JsonArray = JsonValue[];
@@ -19,6 +33,9 @@ interface D1Database {
 interface Env {
   DB: D1Database;
 }
+
+// Initialize WASM core wrapper
+const core = new DotrcCore(wasm);
 
 function json(
   status: number,
@@ -45,21 +62,6 @@ function parsePath(url: URL): string[] {
   return cleaned.split("/").filter(Boolean);
 }
 
-async function insertDot(env: Env, tenant: string, payload: JsonObject) {
-  const id = crypto.randomUUID();
-  const createdAt = Date.now();
-  const stmt = env.DB.prepare(
-    "INSERT INTO dots (id, tenant, body, created_at) VALUES (?1, ?2, ?3, ?4)"
-  ).bind(id, tenant, JSON.stringify(payload), createdAt);
-
-  const result = await stmt.run();
-  if (!result.success) {
-    throw new Error(result.error || "failed to insert dot");
-  }
-
-  return { id, tenant, created_at: createdAt };
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -76,6 +78,18 @@ export default {
       segments.length === 1 &&
       segments[0] === "dots"
     ) {
+      // Parse auth context
+      const tenantId = parseTenantId(request);
+      const userId = parseUserId(request);
+
+      if (!tenantId || !userId) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "Missing tenant or user authentication",
+        });
+      }
+
+      // Parse request body
       let body: JsonValue;
       try {
         body = await readJson(request);
@@ -94,22 +108,55 @@ export default {
       }
 
       const payload = body as Record<string, JsonValue>;
-      const tenant = payload["tenant"];
-      if (typeof tenant !== "string" || tenant.trim() === "") {
-        return json(400, {
-          error: "missing_tenant",
-          detail: "Provide tenant as non-empty string",
-        });
-      }
 
-      // TODO: integrate dotrc-core-wasm for validation/policy
+      // Build dot draft
+      const draft: DotDraft = {
+        title: typeof payload.title === "string" ? payload.title : "",
+        body: typeof payload.body === "string" ? payload.body : undefined,
+        created_by: userId,
+        tenant_id: tenantId,
+        scope_id:
+          typeof payload.scope_id === "string" ? payload.scope_id : undefined,
+        tags: Array.isArray(payload.tags)
+          ? payload.tags.filter((t): t is string => typeof t === "string")
+          : [],
+        visible_to_users: Array.isArray(payload.visible_to_users)
+          ? payload.visible_to_users.filter(
+              (u): u is string => typeof u === "string"
+            )
+          : [userId], // Default: visible to creator
+        visible_to_scopes: Array.isArray(payload.visible_to_scopes)
+          ? payload.visible_to_scopes.filter(
+              (s): s is string => typeof s === "string"
+            )
+          : [],
+        attachments: [], // TODO: Handle attachments
+      };
+
+      // Call core to create dot
       try {
-        const dot = await insertDot(env, tenant, payload);
-        return json(202, { status: "accepted", dot });
-      } catch (err) {
+        const timestamp = now();
+        const dotId = generateDotId();
+        const result = core.createDot(draft, timestamp, dotId);
+
+        // TODO: Persist result.dot, result.grants, result.links to D1
+
+        return json(201, {
+          dot_id: result.dot.id,
+          created_at: result.dot.created_at,
+          grants_count: result.grants.length,
+        });
+      } catch (err: unknown) {
+        // Handle DotrcError
+        if (err instanceof Error) {
+          return json(400, {
+            error: "validation_failed",
+            detail: err.message,
+          });
+        }
         return json(500, {
-          error: "storage_error",
-          detail: (err as Error).message,
+          error: "internal_error",
+          detail: "Unknown error",
         });
       }
     }
