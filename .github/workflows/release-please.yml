@@ -13,6 +13,7 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # Pin third-party action to a specific commit for supply-chain safety
       - uses: googleapis/release-please-action@v4
         id: release
         with:
@@ -29,19 +30,38 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Build artifacts
+      - name: Determine released packages
         if: ${{ steps.release.outputs.release_created }}
+        id: released
         run: |
-          cargo build -p dotrc-core --release
-          cargo build -p dotrc-core --release --no-default-features
-          cargo build -p dotrc-core-wasm --release --target wasm32-unknown-unknown
-          cargo build -p dotrc-server --release
+          echo "paths_released=${{ steps.release.outputs.paths_released }}" >> "$GITHUB_OUTPUT"
+          echo "Released paths: ${{ steps.release.outputs.paths_released }}"
 
-      - name: Upload artifacts to release
-        if: ${{ steps.release.outputs.release_created }}
+      # NOTE: no_std validation is covered in the CI matrix. We intentionally
+      # do not build/upload a separate no_std artifact here to keep releases lean.
+
+      - name: Build WASM (dotrc-core-wasm)
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'crates/dotrc-core-wasm') }}
+        run: |
+          cargo build -p dotrc-core-wasm --release --target wasm32-unknown-unknown
+
+      - name: Upload WASM artifact
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'crates/dotrc-core-wasm') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload ${{ steps.release.outputs.tag_name }} \
-            target/wasm32-unknown-unknown/release/dotrc_core_wasm.wasm \
-            target/release/dotrc-server
+            target/wasm32-unknown-unknown/release/dotrc_core_wasm.wasm#dotrc-core-wasm-wasm32.wasm
+
+      - name: Build Server (dotrc-server)
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'crates/dotrc-server') }}
+        run: |
+          cargo build -p dotrc-server --release
+
+      - name: Upload Server artifact
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'crates/dotrc-server') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload ${{ steps.release.outputs.tag_name }} \
+            target/release/dotrc-server#dotrc-server-linux-x86_64

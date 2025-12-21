@@ -18,10 +18,12 @@ DotRC uses [Conventional Commits](https://www.conventionalcommits.org/) for auto
 - `fix:` - Bug fix (bumps patch version)
 - `perf:` - Performance improvement
 - `docs:` - Documentation changes
-- `chore:` - Maintenance tasks
-- `refactor:` - Code refactoring
+- `style:` - Code style changes (whitespace, formatting, missing semicolons)
+- `refactor:` - Code refactoring (no functional change)
 - `test:` - Test additions/changes
-- `ci:` - CI/CD changes
+- `build:` - Build system or dependency changes
+- `chore:` - Maintenance tasks
+- `ci:` - CI/CD configuration changes
 
 ## Breaking Changes
 
@@ -35,10 +37,16 @@ BREAKING CHANGE: create_link now takes LinkGrants struct instead of separate arg
 
 ## Scopes (optional)
 
+Scope is optional — commits like `docs: update readme` are valid. When provided, scope must be one of:
+
+- `repo` - repository-wide configs and maintenance
+- `infra` - CI/CD, workflows, deployment scripts
 - `core` - dotrc-core crate
 - `wasm` - dotrc-core-wasm
 - `server` - dotrc-server
 - `worker` - dotrc-worker
+- `web` - dotrc-web UI app
+- `sdk` - dotrc-sdk TypeScript client
 - `docs` - documentation
 
 ## Examples
@@ -58,6 +66,12 @@ Reduces create_link argument count by bundling grants.
 fix(core): prevent duplicate links in validation
 
 Validates that identical links aren't created twice.
+```
+
+```
+chore(infra): pin release-please action by SHA
+
+Improve supply-chain safety by pinning third-party action commit.
 ```
 
 ```

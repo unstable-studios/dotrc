@@ -7,15 +7,16 @@ To enforce code quality and release discipline, configure these branch protectio
 1. Go to **Settings** → **Branches** → **Branch protection rules** → **Add rule** for `main`
 2. Enable:
    - ✅ **Require status checks to pass before merging**
-     - CI (Rust tests)
-     - Validate PR Title (conventional commits)
-     - Release Please (automated workflow; runs on push to `main`, not a PR status check)
+     - CI (Rust matrix; shows as multiple contexts under "CI")
+     - Conventional Commits Validation (PR title and commits)
+     - Note: Release Please is automated on push to `main` and is not a PR status check
    - ✅ **Require branches to be up to date before merging**
    - ✅ **Require pull request reviews before merging** (optional, 1 approval recommended)
    - ✅ **Require conversation resolution before merging**
-   - ✅ **Require status checks to pass** (select: `CI`, `validate-pr-title`)
-   - ✅ **Require code reviews from code owners** (if using CODEOWNERS)
-   - ✅ **Allow auto-merge** (optional, for convenience)
+
+- ✅ **Require status checks to pass** (select: `CI`, `Conventional Commits Validation`)
+- ✅ **Require code reviews from code owners** (if using CODEOWNERS)
+- ✅ **Allow auto-merge** (optional, for convenience)
 
 ## What This Enforces
 
@@ -40,5 +41,5 @@ To enforce code quality and release discipline, configure these branch protectio
 
 - Branch protection rules are per-repository in GitHub UI
 - Can't be committed to repo (they're admin settings)
-- Recommended scopes: `core`, `wasm`, `server`, `worker`, `web`, `sdk`, `docs`
-- `requireScope: false` means scope is optional (e.g., `docs: update readme` works fine)
+- Recommended scopes: `repo`, `infra`, `core`, `wasm`, `server`, `worker`, `web`, `sdk`, `docs`
+- Scope is optional per commitlint config (e.g., `docs: update readme` is valid)
