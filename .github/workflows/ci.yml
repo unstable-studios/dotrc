@@ -5,11 +5,6 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Ensure checks run for Release Please PR branches created by bots
-  pull_request_target:
-    branches:
-      - "release-please--branches--*"
-    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   rust:
