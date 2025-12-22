@@ -221,15 +221,16 @@ flowchart TD
 Commands return records to persist (no side effects):
 
 ```rust
-create_dot(draft, clock, id_gen) → Result<CreateDotResult>
-  // Returns: { dot, grants, attachments }
-  // Note: Links are created separately via create_link()
+create_dot<C: Clock, I: IdGen>(draft, clock: &C, id_gen: &I) → Result<CreateDotResult>
+  // Returns: { dot, grants, links }
+  // Note: clock and id_gen are trait-bounded generic references
 
-grant_access(dot, grants, users, scopes, context, clock) → Result<GrantAccessResult>
+grant_access<C: Clock>(dot, existing_grants, target_users, target_scopes, context, clock: &C) → Result<GrantAccessResult>
   // Returns: { grants: Vec<VisibilityGrant> }
 
-create_link(source, target, link_type, context, clock) → Result<CreateLinkResult>
+create_link<C: Clock>(from_dot, to_dot, link_type, grants, existing_links, context, clock: &C) → Result<CreateLinkResult>
   // Returns: { link: Link }
+  // Note: grants is LinkGrants { from: &[VisibilityGrant], to: &[VisibilityGrant] }
 ```
 
 Adapters persist the returned records.
