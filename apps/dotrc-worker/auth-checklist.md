@@ -255,7 +255,7 @@ If you're stuck:
    - CF → [cloudflare-access-setup.md](./cloudflare-access-setup.md)
    - Headers → [trusted-headers-setup.md](./trusted-headers-setup.md)
 
-2. **Review security practices** → [AUTH_SECURITY.md](./AUTH_SECURITY.md)
+2. **Review security practices** → [auth-security.md](./auth-security.md)
 
 3. **Debug locally** → [local-development.md](./local-development.md)
 

@@ -365,6 +365,6 @@ If auth is compromised:
 
 ## References
 
-- [TRUSTED_AUTH.md](./TRUSTED_AUTH.md) - Architecture
+- [trusted-auth.md](./trusted-auth.md) - Architecture
 - [Visibility and Security](../../docs/visibility-and-security.md) - Core principles
 - [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)

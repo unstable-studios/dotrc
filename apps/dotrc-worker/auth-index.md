@@ -146,19 +146,19 @@ curl -X POST http://localhost:8787/dots \
 ## ❓ Common Questions
 
 **Q: Which auth method should I use?**  
-→ See [QUICK_START.md](./QUICK_START.md) for comparison table
+→ See [quick-start.md](./quick-start.md) for comparison table
 
 **Q: Can I change methods later?**  
 → Yes, the pluggable design allows switching without code changes
 
 **Q: How do I test locally?**  
-→ Use [LOCAL_DEVELOPMENT.md](./LOCAL_DEVELOPMENT.md) with DevelopmentProvider
+→ Use [local-development.md](./local-development.md) with DevelopmentProvider
 
 **Q: Is this production-ready?**  
-→ Yes! Follow [AUTH_CHECKLIST.md](./AUTH_CHECKLIST.md) before shipping
+→ Yes! Follow [auth-checklist.md](./auth-checklist.md) before shipping
 
 **Q: Can I use custom auth?**  
-→ Yes! Implement the `AuthProvider` interface (see [TRUSTED_AUTH.md](./TRUSTED_AUTH.md))
+→ Yes! Implement the `AuthProvider` interface (see [trusted-auth.md](./trusted-auth.md))
 
 **Q: What if auth fails?**  
 → Worker returns 401 with `{ error: "unauthorized" }`
@@ -179,12 +179,12 @@ curl -X POST http://localhost:8787/dots \
 
 ## 📞 Support
 
-1. **Quick answers** → Check [QUICK_START.md](./QUICK_START.md) FAQs
+1. **Quick answers** → Check [quick-start.md](./quick-start.md) FAQs
 2. **Setup help** → Read the setup guide for your auth method
-3. **Security questions** → See [AUTH_SECURITY.md](./AUTH_SECURITY.md)
-4. **Testing issues** → Use [LOCAL_DEVELOPMENT.md](./LOCAL_DEVELOPMENT.md) guide
-5. **Pre-deployment** → Follow [AUTH_CHECKLIST.md](./AUTH_CHECKLIST.md)
+3. **Security questions** → See [auth-security.md](./auth-security.md)
+4. **Testing issues** → Use [local-development.md](./local-development.md) guide
+5. **Pre-deployment** → Follow [auth-checklist.md](./auth-checklist.md)
 
 ---
 
-**Everything you need is in this directory. Start with [QUICK_START.md](./QUICK_START.md)!** 🚀
+**Everything you need is in this directory. Start with [quick-start.md](./quick-start.md)!** 🚀

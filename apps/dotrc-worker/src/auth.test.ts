@@ -114,6 +114,19 @@ describe("Auth Providers", () => {
       expect(provider.canHandle(request)).toBe(false);
     });
 
+    it("checks X-Forwarded-Proto header for HTTPS in reverse proxy", () => {
+      // Request URL is HTTP, but X-Forwarded-Proto says HTTPS (reverse proxy scenario)
+      const request = new Request("http://localhost", {
+        headers: {
+          "x-forwarded-user": "user-123",
+          "x-forwarded-tenant": "tenant-456",
+          "x-forwarded-proto": "https",
+        },
+      });
+
+      expect(provider.canHandle(request)).toBe(true);
+    });
+
     it("extracts forwarded user and tenant", async () => {
       const request = new Request("https://localhost", {
         headers: {
@@ -132,15 +145,49 @@ describe("Auth Providers", () => {
     });
 
     it("validates user/tenant format", async () => {
+      // Should reject whitespace in user_id
       const request = new Request("https://localhost", {
         headers: {
-          "x-forwarded-user": "user@invalid",
+          "x-forwarded-user": "user with spaces",
           "x-forwarded-tenant": "tenant-456",
         },
       });
 
       const result = await provider.extract(request);
       expect(result).toBeNull();
+    });
+
+    it("accepts email addresses as user identifiers", async () => {
+      const request = new Request("https://localhost", {
+        headers: {
+          "x-forwarded-user": "user@example.com",
+          "x-forwarded-tenant": "tenant-456",
+        },
+      });
+
+      const result = await provider.extract(request);
+      expect(result).toEqual({
+        tenant_id: "tenant-456",
+        user_id: "user@example.com",
+        scope_memberships: [],
+      });
+    });
+
+    it("handles both comma and space-separated groups", async () => {
+      const request = new Request("https://localhost", {
+        headers: {
+          "x-forwarded-user": "user-123",
+          "x-forwarded-tenant": "tenant-456",
+          "x-forwarded-groups": "scope-1 scope-2,scope-3",
+        },
+      });
+
+      const result = await provider.extract(request);
+      expect(result).toEqual({
+        tenant_id: "tenant-456",
+        user_id: "user-123",
+        scope_memberships: ["scope-1", "scope-2", "scope-3"],
+      });
     });
   });
 
