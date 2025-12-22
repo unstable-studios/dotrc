@@ -27,6 +27,11 @@ export type JsonValue =
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonArray = JsonValue[];
 
+// Helper type for values that are JSON-serializable
+// This is intentionally broad to allow domain types (like Dot) that don't have
+// index signatures but are structurally JSON-serializable
+export type JsonSerializable = JsonValue | { [key: string]: any } | any[];
+
 import { D1DotStorage, type D1Database } from "./storage-d1";
 import { R2AttachmentStorage, type R2Bucket } from "./storage-r2";
 
@@ -48,7 +53,7 @@ const core = new DotrcCore(wasm as DotrcWasm);
 
 function json(
   status: number,
-  body: unknown,
+  body: JsonSerializable,
   headers: HeadersInit = {}
 ): Response {
   return new Response(JSON.stringify(body), {

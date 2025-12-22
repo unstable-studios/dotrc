@@ -308,57 +308,73 @@ export class D1DotStorage implements DotStorage {
     const hasMore = rows.length > limit;
     const dots = rows.slice(0, limit);
 
-    // For each dot, fetch tags and attachments
-    const enrichedDots = await Promise.all(
-      dots.map(async (row) => {
-        // Get tags
-        const tagsResult = await this.db
-          .prepare(`SELECT tag FROM tags WHERE dot_id = ?`)
-          .bind(row.id)
-          .all<{ tag: string }>();
+    if (dots.length === 0) {
+      return { dots: [], total: 0, hasMore: false };
+    }
 
-        const tags = tagsResult.results?.map((r) => r.tag) || [];
+    // Collect all dot IDs for batch fetching
+    const dotIds = dots.map((d) => d.id);
+    const dotIdsPlaceholder = dotIds.map(() => "?").join(",");
 
-        // Get attachments
-        const attachmentsResult = await this.db
-          .prepare(
-            `SELECT id, filename, mime_type, size_bytes, content_hash, created_at
-             FROM attachment_refs
-             WHERE dot_id = ?`
-          )
-          .bind(row.id)
-          .all<{
-            id: string;
-            filename: string;
-            mime_type: string;
-            size_bytes: number;
-            content_hash: string;
-            created_at: string;
-          }>();
+    // Fetch all tags in one query
+    const tagsResult = await this.db
+      .prepare(`SELECT dot_id, tag FROM tags WHERE dot_id IN (${dotIdsPlaceholder})`)
+      .bind(...dotIds)
+      .all<{ dot_id: string; tag: string }>();
 
-        const attachments =
-          attachmentsResult.results?.map((r) => ({
-            id: r.id,
-            filename: r.filename,
-            mime_type: r.mime_type,
-            size_bytes: r.size_bytes,
-            content_hash: r.content_hash,
-            created_at: r.created_at,
-          })) || [];
+    // Group tags by dot_id
+    const tagsByDotId = new Map<string, string[]>();
+    for (const row of tagsResult.results || []) {
+      const tags = tagsByDotId.get(row.dot_id) || [];
+      tags.push(row.tag);
+      tagsByDotId.set(row.dot_id, tags);
+    }
 
-        return {
-          id: row.id,
-          tenant_id: row.tenant_id,
-          title: row.title,
-          body: row.body || undefined,
-          created_by: row.created_by,
-          scope_id: row.scope_id || undefined,
-          created_at: row.created_at,
-          tags,
-          attachments,
-        };
-      })
-    );
+    // Fetch all attachments in one query
+    const attachmentsResult = await this.db
+      .prepare(
+        `SELECT id, dot_id, filename, mime_type, size_bytes, content_hash, created_at
+         FROM attachment_refs
+         WHERE dot_id IN (${dotIdsPlaceholder})`
+      )
+      .bind(...dotIds)
+      .all<{
+        id: string;
+        dot_id: string;
+        filename: string;
+        mime_type: string;
+        size_bytes: number;
+        content_hash: string;
+        created_at: string;
+      }>();
+
+    // Group attachments by dot_id
+    const attachmentsByDotId = new Map<string, any[]>();
+    for (const row of attachmentsResult.results || []) {
+      const attachments = attachmentsByDotId.get(row.dot_id) || [];
+      attachments.push({
+        id: row.id,
+        filename: row.filename,
+        mime_type: row.mime_type,
+        size_bytes: row.size_bytes,
+        content_hash: row.content_hash,
+        created_at: row.created_at,
+      });
+      attachmentsByDotId.set(row.dot_id, attachments);
+    }
+
+    // Combine dots with their tags and attachments
+    const enrichedDots = dots.map((row) => ({
+      id: row.id,
+      tenant_id: row.tenant_id,
+      title: row.title,
+      body: row.body || undefined,
+      created_by: row.created_by,
+      scope_id: row.scope_id || undefined,
+      created_at: row.created_at,
+      tags: tagsByDotId.get(row.id) || [],
+      attachments: attachmentsByDotId.get(row.id) || [],
+    }));
 
     return {
       dots: enrichedDots,
