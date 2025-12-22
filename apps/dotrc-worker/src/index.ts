@@ -44,6 +44,11 @@ interface D1Database {
 interface Env {
   // Optional: D1 database binding will be configured when persistence is implemented
   DB?: D1Database;
+  JWT_JWKS_URL?: string;
+  JWT_AUDIENCE?: string;
+  JWT_ISSUER?: string;
+  JWT_HS256_SECRET?: string;
+  JWT_CLOCK_SKEW_SECONDS?: string;
 }
 
 // Initialize WASM core wrapper (bundler target auto-initializes on import)
@@ -93,9 +98,25 @@ export default {
       // Configure auth providers in order of preference
       // Production: Cloudflare Access → JWT → Trusted Headers
       // Development: Add DevelopmentProvider for local testing
+      const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
+        ? Number(env.JWT_CLOCK_SKEW_SECONDS)
+        : undefined;
+      const validClockSkew =
+        clockSkewSeconds !== undefined &&
+        !isNaN(clockSkewSeconds) &&
+        Number.isFinite(clockSkewSeconds)
+          ? clockSkewSeconds
+          : undefined;
+
       const authProviders: AuthProvider[] = [
         new CloudflareAccessProvider(),
-        new JWTProvider(),
+        new JWTProvider({
+          jwksUrl: env.JWT_JWKS_URL,
+          audience: env.JWT_AUDIENCE,
+          issuer: env.JWT_ISSUER,
+          symmetricKey: env.JWT_HS256_SECRET,
+          clockToleranceSeconds: validClockSkew,
+        }),
         new TrustedHeaderProvider(),
         new DevelopmentProvider(), // Only for testing
       ];

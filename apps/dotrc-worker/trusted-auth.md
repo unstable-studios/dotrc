@@ -147,22 +147,18 @@ Then add it to the provider list in `index.ts`.
 
 - ✅ **Remove DevelopmentProvider** from production deployments
 - ✅ **Configure HTTPS**: TrustedHeaderProvider enforces HTTPS by default
-- ✅ **Verify JWT signatures**: Current JWT provider trusts claims (implement real verification)
+- ✅ **Verify JWT signatures**: JWT provider enforces HS256/RS256 signatures (configure `JWT_JWKS_URL` or `JWT_HS256_SECRET` plus `JWT_AUDIENCE`/`JWT_ISSUER`)
 - ✅ **Test auth flow**: Ensure chosen provider matches your auth system
 - ✅ **Monitor auth failures**: Log and alert on 401 responses
 - ✅ **Implement tenant lookup**: Current implementation trusts tenant claim (add database validation)
 
-## JWT Signature Verification (TODO)
+## JWT Signature Verification
 
-Current implementation accepts JWT claims without verification. For production:
+JWT signatures are verified before claims are accepted. Configure one of:
 
-```typescript
-// TODO: Implement using webcrypto or jose library
-async function verifyJWT(token: string, publicKey: string): Promise<any> {
-  const algorithm = { name: "RSASSA-PKCS1-v1_5" };
-  // Verify signature and return claims
-}
-```
+- **RS256 (recommended)**: Set `JWT_JWKS_URL` to your issuer JWKS endpoint, and optionally `JWT_AUDIENCE` / `JWT_ISSUER` for claim checks.
+- **HS256 (dev/local)**: Set `JWT_HS256_SECRET` to the shared secret used to sign tokens.
+- Optional: `JWT_CLOCK_SKEW_SECONDS` to allow small drift for `exp`/`nbf`.
 
 ## Scope Membership Expansion
 

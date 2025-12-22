@@ -46,11 +46,107 @@ export interface AuthProvider {
  * - sub: User identifier (required)
  * - tenant: Tenant identifier (required)
  * - scope: Space-separated list of scopes (optional)
- *
- * ⚠️  For production, implement proper JWT signature verification!
- * This is a placeholder that trusts the token claims (dev-only mode).
+ * - aud / iss / exp / nbf: validated when provided
  */
+export type SupportedJWTAlgorithm = "HS256" | "RS256";
+
+export interface JWTProviderOptions {
+  jwksUrl?: string;
+  symmetricKey?: string;
+  audience?: string;
+  issuer?: string;
+  allowedAlgorithms?: SupportedJWTAlgorithm[];
+  clockToleranceSeconds?: number;
+}
+
+interface JWTPayload {
+  sub?: unknown;
+  tenant?: unknown;
+  aud?: unknown;
+  scope?: unknown;
+  iss?: unknown;
+  exp?: unknown;
+  nbf?: unknown;
+  [key: string]: unknown;
+}
+
+interface JWTHeader {
+  alg?: unknown;
+  kid?: unknown;
+  typ?: unknown;
+  [key: string]: unknown;
+}
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+function base64UrlToUint8Array(input: string): Uint8Array {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - (normalized.length % 4)) % 4),
+    "="
+  );
+
+  if (typeof atob === "function") {
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  const maybeBuffer = (globalThis as { Buffer?: unknown }).Buffer as
+    | undefined
+    | { from(data: string, encoding: string): Uint8Array };
+
+  if (maybeBuffer) {
+    return new Uint8Array(maybeBuffer.from(padded, "base64"));
+  }
+
+  throw new Error("Base64 decoding not supported in this environment");
+}
+
+async function importHs256Key(secretBytes: Uint8Array): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+}
+
+async function importRs256Key(jwk: JsonWebKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "jwk",
+    jwk,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+}
+
 export class JWTProvider implements AuthProvider {
+  private readonly allowedAlgorithms: SupportedJWTAlgorithm[];
+  private readonly jwksUrl?: string;
+  private readonly symmetricKeyBytes?: Uint8Array;
+  private readonly audience?: string;
+  private readonly issuer?: string;
+  private readonly clockToleranceSeconds: number;
+  private jwksCache?: { keys: JsonWebKey[]; expiresAt: number };
+
+  constructor(options: JWTProviderOptions = {}) {
+    this.allowedAlgorithms = options.allowedAlgorithms ?? ["RS256", "HS256"];
+    this.jwksUrl = options.jwksUrl;
+    this.symmetricKeyBytes = options.symmetricKey
+      ? textEncoder.encode(options.symmetricKey)
+      : undefined;
+    this.audience = options.audience;
+    this.issuer = options.issuer;
+    this.clockToleranceSeconds = options.clockToleranceSeconds ?? 60;
+  }
+
   canHandle(request: Request): boolean {
     const auth = request.headers.get("authorization");
     return auth?.toLowerCase().startsWith("bearer ") ?? false;
@@ -63,19 +159,67 @@ export class JWTProvider implements AuthProvider {
     }
 
     const token = auth.slice(7); // Remove "Bearer "
+    const [headerSegment, payloadSegment, signatureSegment] = token.split(".");
+
+    if (!headerSegment || !payloadSegment || !signatureSegment) {
+      return null;
+    }
 
     try {
-      // Decode JWT (without verification for now - prod should verify!)
-      const [, payloadBase64] = token.split(".");
-      if (!payloadBase64) return null;
+      const header = this.parseHeader(headerSegment);
+      if (!header) {
+        return null;
+      }
 
-      // Decode base64 (using atob for Worker compatibility)
-      const payloadJson = atob(payloadBase64);
-      const payload = JSON.parse(payloadJson);
+      if (!this.allowedAlgorithms.includes(header.alg)) {
+        return null;
+      }
 
-      const tenant_id = payload.tenant || payload.aud;
-      const user_id = payload.sub;
-      const scopes = payload.scope ? (payload.scope as string).split(" ") : [];
+      const payload = this.parsePayload(payloadSegment);
+      if (!payload) {
+        return null;
+      }
+
+      const verified = await this.verifySignature(
+        header,
+        headerSegment,
+        payloadSegment,
+        signatureSegment
+      );
+
+      if (!verified) {
+        return null;
+      }
+
+      if (!this.validateTemporalClaims(payload)) {
+        return null;
+      }
+
+      if (!this.validateIssuer(payload) || !this.validateAudience(payload)) {
+        return null;
+      }
+
+      let tenant_id: string | undefined;
+      if (typeof payload.tenant === "string") {
+        tenant_id = payload.tenant;
+      } else if (typeof payload.aud === "string") {
+        tenant_id = payload.aud;
+      } else if (Array.isArray(payload.aud)) {
+        const firstAud = payload.aud.find(
+          (audValue) => typeof audValue === "string" && audValue.length > 0
+        );
+        tenant_id = firstAud;
+      }
+      const user_id = typeof payload.sub === "string" ? payload.sub : undefined;
+      const scopeClaim = payload.scope;
+      const scopes =
+        typeof scopeClaim === "string"
+          ? scopeClaim.split(" ").filter(Boolean)
+          : Array.isArray(scopeClaim)
+          ? scopeClaim
+              .map((s) => (typeof s === "string" ? s.trim() : ""))
+              .filter(Boolean)
+          : [];
 
       if (!tenant_id || !user_id) {
         return null;
@@ -89,6 +233,189 @@ export class JWTProvider implements AuthProvider {
     } catch {
       return null;
     }
+  }
+
+  private parseHeader(
+    segment: string
+  ): { alg: SupportedJWTAlgorithm; kid?: string } | null {
+    try {
+      const raw = JSON.parse(
+        textDecoder.decode(base64UrlToUint8Array(segment))
+      );
+      const alg = raw.alg as unknown;
+      const kid = raw.kid as unknown;
+
+      if (alg === "HS256" || alg === "RS256") {
+        return {
+          alg,
+          kid: typeof kid === "string" ? kid : undefined,
+        };
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private parsePayload(segment: string): JWTPayload | null {
+    try {
+      return JSON.parse(textDecoder.decode(base64UrlToUint8Array(segment)));
+    } catch {
+      return null;
+    }
+  }
+
+  private async verifySignature(
+    header: { alg: SupportedJWTAlgorithm; kid?: string },
+    headerSegment: string,
+    payloadSegment: string,
+    signatureSegment: string
+  ): Promise<boolean> {
+    const data = textEncoder.encode(`${headerSegment}.${payloadSegment}`);
+    const signature = base64UrlToUint8Array(signatureSegment);
+
+    if (header.alg === "HS256") {
+      if (!this.symmetricKeyBytes) return false;
+
+      try {
+        const key = await importHs256Key(this.symmetricKeyBytes);
+        return crypto.subtle.verify("HMAC", key, signature, data);
+      } catch {
+        return false;
+      }
+    }
+
+    // RS256 verification
+    const jwk = await this.getJwkForKid(header.kid);
+    if (!jwk) {
+      return false;
+    }
+
+    try {
+      const key = await importRs256Key(jwk);
+      return crypto.subtle.verify(
+        { name: "RSASSA-PKCS1-v1_5" },
+        key,
+        signature,
+        data
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async getJwkForKid(kid?: string): Promise<JsonWebKey | null> {
+    if (!this.jwksUrl) {
+      return null;
+    }
+
+    try {
+      const keys = await this.loadJwks();
+      if (!keys.length) {
+        return null;
+      }
+
+      if (kid) {
+        const match = keys.find((key) => this.getKid(key) === kid);
+        if (match) {
+          return this.isRsaKey(match) ? match : null;
+        }
+        // If JWT specifies a kid but no match found, don't fall back to single key
+        return null;
+      }
+
+      // Only use single key fallback when JWT doesn't specify a kid
+      if (keys.length === 1 && this.isRsaKey(keys[0])) {
+        return keys[0];
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async loadJwks(): Promise<JsonWebKey[]> {
+    const now = Date.now();
+    if (this.jwksCache && this.jwksCache.expiresAt > now) {
+      return this.jwksCache.keys;
+    }
+
+    if (!this.jwksUrl) return [];
+
+    const response = await fetch(this.jwksUrl);
+    if (!response.ok) {
+      return [];
+    }
+
+    try {
+      const body = await response.json();
+      const keys = Array.isArray((body as { keys?: unknown }).keys)
+        ? (body as { keys: JsonWebKey[] }).keys ?? []
+        : [];
+
+      // Cache for 5 minutes to reduce JWKS fetches
+      this.jwksCache = {
+        keys,
+        expiresAt: now + 5 * 60 * 1000,
+      };
+
+      return keys;
+    } catch {
+      // Malformed or non-JSON JWKS response; treat as no keys
+      return [];
+    }
+  }
+
+  private validateTemporalClaims(payload: JWTPayload): boolean {
+    const now = Math.floor(Date.now() / 1000);
+    const leeway = this.clockToleranceSeconds;
+
+    if (typeof payload.exp === "number" && now >= payload.exp + leeway) {
+      return false;
+    }
+
+    if (typeof payload.nbf === "number" && now + leeway < payload.nbf) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private validateIssuer(payload: JWTPayload): boolean {
+    if (!this.issuer) return true;
+    return typeof payload.iss === "string" && payload.iss === this.issuer;
+  }
+
+  private validateAudience(payload: JWTPayload): boolean {
+    if (!this.audience) return true;
+
+    const aud = payload.aud;
+    if (typeof aud === "string") {
+      return aud === this.audience;
+    }
+
+    if (Array.isArray(aud)) {
+      return aud.includes(this.audience);
+    }
+
+    return false;
+  }
+
+  private isRsaKey(jwk: JsonWebKey): jwk is JsonWebKey {
+    const kty = jwk.kty;
+    const n = jwk.n;
+    const e = jwk.e;
+    const isRsaKty = typeof kty === "string" && kty === "RSA";
+    const hasModulus = typeof n === "string" && n.length > 0;
+    const hasExponent = typeof e === "string" && e.length > 0;
+    return isRsaKty && hasModulus && hasExponent;
+  }
+
+  private getKid(jwk: JsonWebKey): string | undefined {
+    const kid = (jwk as { kid?: unknown }).kid;
+    return typeof kid === "string" ? kid : undefined;
   }
 }
 
@@ -158,7 +485,7 @@ export class TrustedHeaderProvider implements AuthProvider {
   canHandle(request: Request): boolean {
     const hasUserHeader = request.headers.has("x-forwarded-user");
     const hasTenantHeader = request.headers.has("x-forwarded-tenant");
-    
+
     // Check X-Forwarded-Proto header for reverse proxy deployments
     const forwardedProto = request.headers.get("x-forwarded-proto");
     const isForwardedHttps = forwardedProto
