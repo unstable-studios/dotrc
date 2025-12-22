@@ -102,9 +102,7 @@ export default {
         ? Number(env.JWT_CLOCK_SKEW_SECONDS)
         : undefined;
       const validClockSkew =
-        clockSkewSeconds !== undefined &&
-        !isNaN(clockSkewSeconds) &&
-        Number.isFinite(clockSkewSeconds)
+        !isNaN(clockSkewSeconds) && Number.isFinite(clockSkewSeconds)
           ? clockSkewSeconds
           : undefined;
 

@@ -404,7 +404,9 @@ export class JWTProvider implements AuthProvider {
   }
 
   private isRsaKey(jwk: JsonWebKey): jwk is JsonWebKey {
-    const { kty, n, e } = jwk as { kty?: unknown; n?: unknown; e?: unknown };
+    const kty = jwk.kty;
+    const n = jwk.n;
+    const e = jwk.e;
     const isRsaKty = typeof kty === "string" && kty === "RSA";
     const hasModulus = typeof n === "string" && n.length > 0;
     const hasExponent = typeof e === "string" && e.length > 0;
