@@ -164,15 +164,51 @@ make help
 
 **See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed testing guide.**
 
+## Authentication & Authorization
+
+DotRC uses a pluggable authentication system where adapters handle trust boundaries, and the core enforces policy.
+
+**Supported Auth Methods:**
+
+- **JWT/OIDC** — Industry standard (Auth0, Okta, Azure AD, GitHub, Google)
+- **Cloudflare Access** — Zero-trust proxy with CF-specific optimization
+- **Trusted Headers** — Reverse proxy deployments (nginx, Traefik, Kubernetes)
+- **Development** — Local testing with insecure headers
+
+**👉 Start here:** [auth-index.md](apps/dotrc-worker/auth-index.md) — Complete documentation map  
+**💨 In a hurry:** [quick-start.md](apps/dotrc-worker/quick-start.md) — 5-minute guide
+
+**How it works:** [trusted-auth.md](apps/dotrc-worker/trusted-auth.md) — Architecture & provider overview
+
+**Setup Guides:**
+
+- [jwt-setup.md](apps/dotrc-worker/jwt-setup.md) — OIDC provider (Auth0, Okta, Azure AD, GitHub, Google)
+- [cloudflare-access-setup.md](apps/dotrc-worker/cloudflare-access-setup.md) — Cloudflare Access
+- [trusted-headers-setup.md](apps/dotrc-worker/trusted-headers-setup.md) — Reverse proxy (K8s, Traefik, nginx)
+- [local-development.md](apps/dotrc-worker/local-development.md) — Testing & debugging
+
+**Before Shipping:**
+
+- [auth-security.md](apps/dotrc-worker/auth-security.md) — Security best practices
+- [auth-checklist.md](apps/dotrc-worker/auth-checklist.md) — Pre-deployment verification
+
+**Key Principles:**
+
+- No retroactive access: Visibility is a snapshot at creation time
+- Multi-tenant: Tenant isolation enforced at every operation
+- Pluggable: Swap providers without changing core
+
 ## What not to do
 
-- Don’t add DB access to core
-- Don’t mutate dots
-- Don’t infer permissions
-- Don’t add “states”
-- Don’t make links mandatory
+- Don't add DB access to core
+- Don't mutate dots
+- Don't infer permissions
+- Don't add "states"
+- Don't make links mandatory
+- Don't trust client-provided auth headers (use adapters instead)
+- Don't change ACLs retroactively (snapshot at creation)
 
-If you feel tempted, re-read docs/overview.md.
+If you feel tempted, re-read [docs/overview.md](docs/overview.md).
 
 ## License & usage
 
