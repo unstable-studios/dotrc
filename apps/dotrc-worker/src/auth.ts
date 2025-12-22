@@ -158,8 +158,13 @@ export class TrustedHeaderProvider implements AuthProvider {
   canHandle(request: Request): boolean {
     const hasUserHeader = request.headers.has("x-forwarded-user");
     const hasTenantHeader = request.headers.has("x-forwarded-tenant");
-    const isSecure =
-      !this.requireSecureScheme || request.url.startsWith("https://");
+    
+    // Check X-Forwarded-Proto header for reverse proxy deployments
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const isForwardedHttps = forwardedProto
+      ? forwardedProto.split(",")[0]!.trim().toLowerCase() === "https"
+      : request.url.startsWith("https://");
+    const isSecure = !this.requireSecureScheme || isForwardedHttps;
 
     return hasUserHeader && hasTenantHeader && isSecure;
   }
@@ -173,11 +178,10 @@ export class TrustedHeaderProvider implements AuthProvider {
       return null;
     }
 
-    // Validate format
-    if (
-      !/^[a-zA-Z0-9_-]+$/.test(user_id) ||
-      !/^[a-zA-Z0-9_-]+$/.test(tenant_id)
-    ) {
+    // Validate format: allow common identifier forms (emails, slugs, etc.)
+    // Disallow whitespace and commas to keep parsing simple and unambiguous.
+    const idPattern = /^[\w.@+-]+$/;
+    if (!idPattern.test(user_id) || !idPattern.test(tenant_id)) {
       return null;
     }
 
@@ -185,7 +189,7 @@ export class TrustedHeaderProvider implements AuthProvider {
       tenant_id,
       user_id,
       scope_memberships: groups
-        .split(",")
+        .split(/[,\s]+/)
         .map((s) => s.trim())
         .filter(Boolean),
     };
@@ -214,11 +218,8 @@ export class DevelopmentProvider implements AuthProvider {
       return null;
     }
 
-    // Basic validation
-    if (
-      !/^[a-zA-Z0-9_-]+$/.test(tenant_id) ||
-      !/^[a-zA-Z0-9_-]+$/.test(user_id)
-    ) {
+    // Basic validation: require non-empty, no whitespace characters
+    if (!/^\S+$/.test(tenant_id) || !/^\S+$/.test(user_id)) {
       return null;
     }
 

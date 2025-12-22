@@ -142,7 +142,7 @@ Both work fine. JWT is more portable; CF Access is simpler if you're on Cloudfla
 2. **Choose method**: Pick JWT/CF/Headers based on your setup
 3. **Follow guide**: Read the setup guide for your method
 4. **Deploy**: Push to staging first
-5. **Verify**: Use AUTH_CHECKLIST.md
+5. **Verify**: Use auth-checklist.md
 6. **Go live**: Ship with confidence
 
 ## Architecture Diagram
@@ -165,7 +165,7 @@ Core validates policy (who can see what)
 Response (200 if allowed, 404/401 if not)
 ```
 
-See [TRUSTED_AUTH.md](./TRUSTED_AUTH.md) for detailed architecture.
+See [trusted-auth.md](./trusted-auth.md) for detailed architecture.
 
 ---
 
