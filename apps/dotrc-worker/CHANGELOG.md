@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v0.2.0...dotrc-worker-v0.3.0) (2025-12-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* implement trusted auth via providers ([#20](https://github.com/unstable-studios/dotrc/issues/20))
+
+### Features
+
+* **core:** add DotRC error types ([#18](https://github.com/unstable-studios/dotrc/issues/18)) ([34b020f](https://github.com/unstable-studios/dotrc/commit/34b020fcca87ec5c5d7f3bb31dac2eba32ed0d65))
+* implement trusted auth via providers ([#20](https://github.com/unstable-studios/dotrc/issues/20)) ([b82b2d1](https://github.com/unstable-studios/dotrc/commit/b82b2d1c8bcb33f3b1cb3e57fcd5ff1c8da43416))
+
 ## [0.2.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v0.1.0...dotrc-worker-v0.2.0) (2025-12-21)
 
 

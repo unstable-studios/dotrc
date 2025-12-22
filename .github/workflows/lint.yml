@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    branches:
+      - "release-please--branches--*"
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   rust:
