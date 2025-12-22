@@ -101,6 +101,12 @@ export default {
       const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
         ? Number(env.JWT_CLOCK_SKEW_SECONDS)
         : undefined;
+      const validClockSkew =
+        clockSkewSeconds !== undefined &&
+        !isNaN(clockSkewSeconds) &&
+        Number.isFinite(clockSkewSeconds)
+          ? clockSkewSeconds
+          : undefined;
 
       const authProviders: AuthProvider[] = [
         new CloudflareAccessProvider(),
@@ -109,9 +115,7 @@ export default {
           audience: env.JWT_AUDIENCE,
           issuer: env.JWT_ISSUER,
           symmetricKey: env.JWT_HS256_SECRET,
-          clockToleranceSeconds: Number.isFinite(clockSkewSeconds)
-            ? clockSkewSeconds
-            : undefined,
+          clockToleranceSeconds: validClockSkew,
         }),
         new TrustedHeaderProvider(),
         new DevelopmentProvider(), // Only for testing

@@ -199,12 +199,17 @@ export class JWTProvider implements AuthProvider {
         return null;
       }
 
-      const tenant_id =
-        typeof payload.tenant === "string"
-          ? payload.tenant
-          : typeof payload.aud === "string"
-          ? payload.aud
-          : undefined;
+      let tenant_id: string | undefined;
+      if (typeof payload.tenant === "string") {
+        tenant_id = payload.tenant;
+      } else if (typeof payload.aud === "string") {
+        tenant_id = payload.aud;
+      } else if (Array.isArray(payload.aud)) {
+        const firstAud = payload.aud.find(
+          (audValue) => typeof audValue === "string" && audValue.length > 0
+        );
+        tenant_id = firstAud;
+      }
       const user_id = typeof payload.sub === "string" ? payload.sub : undefined;
       const scopeClaim = payload.scope;
       const scopes =
@@ -341,25 +346,30 @@ export class JWTProvider implements AuthProvider {
       return [];
     }
 
-    const body = await response.json();
-    const keys = Array.isArray((body as { keys?: unknown }).keys)
-      ? (body as { keys: JsonWebKey[] }).keys ?? []
-      : [];
+    try {
+      const body = await response.json();
+      const keys = Array.isArray((body as { keys?: unknown }).keys)
+        ? (body as { keys: JsonWebKey[] }).keys ?? []
+        : [];
 
-    // Cache for 5 minutes to reduce JWKS fetches
-    this.jwksCache = {
-      keys,
-      expiresAt: now + 5 * 60 * 1000,
-    };
+      // Cache for 5 minutes to reduce JWKS fetches
+      this.jwksCache = {
+        keys,
+        expiresAt: now + 5 * 60 * 1000,
+      };
 
-    return keys;
+      return keys;
+    } catch {
+      // Malformed or non-JSON JWKS response; treat as no keys
+      return [];
+    }
   }
 
   private validateTemporalClaims(payload: JWTPayload): boolean {
     const now = Math.floor(Date.now() / 1000);
     const leeway = this.clockToleranceSeconds;
 
-    if (typeof payload.exp === "number" && now - leeway >= payload.exp) {
+    if (typeof payload.exp === "number" && now >= payload.exp + leeway) {
       return false;
     }
 
@@ -391,8 +401,11 @@ export class JWTProvider implements AuthProvider {
   }
 
   private isRsaKey(jwk: JsonWebKey): jwk is JsonWebKey {
-    const kty = (jwk as { kty?: unknown }).kty;
-    return typeof kty === "string" && kty === "RSA";
+    const { kty, n, e } = jwk as { kty?: unknown; n?: unknown; e?: unknown };
+    const isRsaKty = typeof kty === "string" && kty === "RSA";
+    const hasModulus = typeof n === "string" && n.length > 0;
+    const hasExponent = typeof e === "string" && e.length > 0;
+    return isRsaKty && hasModulus && hasExponent;
   }
 
   private getKid(jwk: JsonWebKey): string | undefined {
