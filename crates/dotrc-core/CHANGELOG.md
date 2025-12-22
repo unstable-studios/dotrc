@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/unstable-studios/dotrc/compare/dotrc-core-v0.1.0...dotrc-core-v0.2.0) (2025-12-22)
+
+
+### Features
+
+* **core:** add DotRC error types ([#18](https://github.com/unstable-studios/dotrc/issues/18)) ([34b020f](https://github.com/unstable-studios/dotrc/commit/34b020fcca87ec5c5d7f3bb31dac2eba32ed0d65))
+
 ## [0.1.0](https://github.com/unstable-studios/dotrc/compare/dotrc-core-v0.1.0...dotrc-core-v0.1.0) (2025-12-21)
 
 
