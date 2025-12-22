@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    branches:
+      - "release-please--branches--*"
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     # Run daily at 2 AM UTC
     - cron: "0 2 * * *"
