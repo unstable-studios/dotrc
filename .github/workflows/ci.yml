@@ -5,10 +5,8 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Ensure checks run for Release Please PR branches created by bots
+  # Ensure checks run for PRs from bots (release-please, dependabot)
   pull_request_target:
-    branches:
-      - "release-please--branches--*"
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
