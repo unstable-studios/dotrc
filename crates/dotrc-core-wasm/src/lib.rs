@@ -8,6 +8,7 @@ use dotrc_core::{
         create_dot, create_link, grant_access, CreateDotResult, CreateLinkResult,
         GrantAccessResult, LinkGrants,
     },
+    errors::DotrcErrorKind,
     policy::{can_view_dot, filter_visible_dots, AuthContext},
     types::{
         Clock, Dot, DotDraft, DotId, IdGen, Link, LinkType, ScopeId, Timestamp, UserId,
@@ -60,8 +61,13 @@ impl IdGen for InjectedIdGen {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum WasmResult<T> {
-    Ok { data: T },
-    Err { kind: String, message: String },
+    Ok {
+        data: T,
+    },
+    Err {
+        kind: DotrcErrorKind,
+        message: String,
+    },
 }
 
 impl<T: Serialize> WasmResult<T> {
@@ -70,18 +76,9 @@ impl<T: Serialize> WasmResult<T> {
     }
 
     fn err(error: &dotrc_core::errors::DotrcError) -> String {
-        let (kind, message) = match error {
-            dotrc_core::errors::DotrcError::Validation(e) => ("validation", format!("{}", e)),
-            dotrc_core::errors::DotrcError::Authorization(e) => ("authorization", format!("{}", e)),
-            dotrc_core::errors::DotrcError::InvalidLink(e) => ("invalid_link", format!("{}", e)),
-            dotrc_core::errors::DotrcError::NotImplemented => {
-                ("not_implemented", "Not implemented".to_string())
-            }
-        };
-
         serde_json::to_string(&WasmResult::<()>::Err {
-            kind: kind.to_string(),
-            message,
+            kind: error.kind(),
+            message: format!("{}", error),
         })
         .unwrap()
     }
@@ -162,7 +159,7 @@ pub fn wasm_create_dot(draft_json: &str, now: &str, dot_id: &str) -> String {
         Ok(d) => d,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse draft: {}", e),
             })
             .unwrap()
@@ -211,7 +208,7 @@ pub fn wasm_grant_access(
         Ok(d) => d,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse dot: {}", e),
             })
             .unwrap()
@@ -222,7 +219,7 @@ pub fn wasm_grant_access(
         Ok(g) => g,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse existing grants: {}", e),
             })
             .unwrap()
@@ -233,7 +230,7 @@ pub fn wasm_grant_access(
         Ok(u) => u,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse target users: {}", e),
             })
             .unwrap()
@@ -244,7 +241,7 @@ pub fn wasm_grant_access(
         Ok(s) => s,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse target scopes: {}", e),
             })
             .unwrap()
@@ -255,7 +252,7 @@ pub fn wasm_grant_access(
         Ok(c) => c,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse context: {}", e),
             })
             .unwrap()
@@ -311,7 +308,7 @@ pub fn wasm_create_link(
         Ok(d) => d,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse from_dot: {}", e),
             })
             .unwrap()
@@ -322,7 +319,7 @@ pub fn wasm_create_link(
         Ok(d) => d,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse to_dot: {}", e),
             })
             .unwrap()
@@ -336,7 +333,7 @@ pub fn wasm_create_link(
         "related" => LinkType::Related,
         _ => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Invalid link type: {}", link_type),
             })
             .unwrap()
@@ -347,7 +344,7 @@ pub fn wasm_create_link(
         Ok(g) => g,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse grants: {}", e),
             })
             .unwrap()
@@ -358,7 +355,7 @@ pub fn wasm_create_link(
         Ok(l) => l,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse existing links: {}", e),
             })
             .unwrap()
@@ -369,7 +366,7 @@ pub fn wasm_create_link(
         Ok(c) => c,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse context: {}", e),
             })
             .unwrap()
@@ -416,7 +413,7 @@ pub fn wasm_can_view_dot(dot_json: &str, grants_json: &str, context_json: &str) 
         Ok(d) => d,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse dot: {}", e),
             })
             .unwrap()
@@ -427,7 +424,7 @@ pub fn wasm_can_view_dot(dot_json: &str, grants_json: &str, context_json: &str) 
         Ok(g) => g,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse grants: {}", e),
             })
             .unwrap()
@@ -438,7 +435,7 @@ pub fn wasm_can_view_dot(dot_json: &str, grants_json: &str, context_json: &str) 
         Ok(c) => c,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse context: {}", e),
             })
             .unwrap()
@@ -466,7 +463,7 @@ pub fn wasm_filter_visible_dots(dots_json: &str, grants_json: &str, context_json
         Ok(d) => d,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse dots: {}", e),
             })
             .unwrap()
@@ -477,7 +474,7 @@ pub fn wasm_filter_visible_dots(dots_json: &str, grants_json: &str, context_json
         Ok(g) => g,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse grants: {}", e),
             })
             .unwrap()
@@ -488,7 +485,7 @@ pub fn wasm_filter_visible_dots(dots_json: &str, grants_json: &str, context_json
         Ok(c) => c,
         Err(e) => {
             return serde_json::to_string(&WasmResult::<()>::Err {
-                kind: "parse_error".to_string(),
+                kind: DotrcErrorKind::ServerError,
                 message: format!("Failed to parse context: {}", e),
             })
             .unwrap()

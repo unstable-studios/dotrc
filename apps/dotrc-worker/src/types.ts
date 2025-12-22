@@ -68,6 +68,19 @@ export interface AuthContext {
 
 // WASM Result types
 
+/**
+ * DotRC error kinds mapping to HTTP status codes:
+ * - Validation: 400 Bad Request - Invalid input (e.g., missing required fields, invalid format)
+ * - Authorization: 403 Forbidden - User lacks permission for the requested operation
+ * - Link: 500 Internal Server Error - Invalid link operation (e.g., circular dependency)
+ * - ServerError: 500 Internal Server Error - Unexpected errors (e.g., parse failures)
+ */
+export type DotrcErrorKind =
+  | "Validation"
+  | "Authorization"
+  | "Link"
+  | "ServerError";
+
 export type WasmResultOk<T> = {
   type: "ok";
   data: T;
@@ -75,12 +88,7 @@ export type WasmResultOk<T> = {
 
 export type WasmResultErr = {
   type: "err";
-  kind:
-    | "validation"
-    | "authorization"
-    | "invalid_link"
-    | "parse_error"
-    | "not_implemented";
+  kind: DotrcErrorKind;
   message: string;
 };
 
@@ -117,8 +125,12 @@ export interface LinkGrants {
 
 // Error handling utilities
 
+/**
+ * Structured error type for DotRC operations.
+ * Includes a typed `kind` field for programmatic error handling.
+ */
 export class DotrcError extends Error {
-  constructor(public kind: WasmResultErr["kind"], message: string) {
+  constructor(public kind: DotrcErrorKind, message: string) {
     super(message);
     this.name = "DotrcError";
   }

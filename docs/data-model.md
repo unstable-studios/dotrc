@@ -175,7 +175,7 @@ erDiagram
 
 **Visibility Semantics**:
 
-- When a dot references a scope in `visible_to_scopes`, adapters should expand current scope members into explicit user grants
+- When a dot references a scope in `visible_to_scopes`, adapters **must** expand current scope members into explicit user grants at creation time
 - Scopes in `VisibilityGrant` records are provenance only—core does not dynamically infer access from current scope membership
 
 **Examples**: Slack #engineering channel, "Q1 Planning" project, "Exec Team" group
@@ -195,8 +195,8 @@ erDiagram
 - `created_by` (FK → User): Creator's internal user ID
 - `scope_id` (FK → Scope, optional): Context where dot was created
 - `created_at`: RFC3339 timestamp
-- `tags`: List of lowercase, normalized tags (max 10)
-- `attachments`: References to attachment metadata
+- `tags`: List of lowercase, normalized tags (max 20)
+- `attachments`: References to attachment metadata (max 10)
 
 **Invariants**:
 
@@ -287,7 +287,7 @@ graph LR
 
 - At dot creation, visibility is captured as an **immutable snapshot**
 - Grants enumerate principals: either `user_id` OR `scope_id` (at least one)
-- Adapters should expand scope references into explicit user grants at creation
+- Adapters **must** expand scope references into explicit user grants at creation
 
 **Enforcement**:
 
@@ -342,8 +342,9 @@ Alice, Bob, Carol, and Dave can view. New `#engineering` members cannot unless e
 
 **Limits**:
 
+- Max 10 attachments per dot
 - Max filename length: 255 chars
-- Max file size: 100 MB (configurable per adapter)
+- Max file size: 50 MB (enforced by core)
 - No path separators in filename (`/`, `\`)
 
 ---
@@ -365,7 +366,7 @@ Alice, Bob, Carol, and Dave can view. New `#engineering` members cannot unless e
 
 **Limits**:
 
-- Max 10 tags per dot
+- Max 20 tags per dot
 - Max tag length: 50 chars
 - Duplicates removed
 

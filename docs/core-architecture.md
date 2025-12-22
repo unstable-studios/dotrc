@@ -129,13 +129,38 @@ Immutable types representing domain concepts:
 
 ### `errors.rs` — Error Taxonomy
 
-Rich error types for clear failure modes:
+**Two-Layer Error System:**
 
-- `ValidationError` — Invalid input (title too long, bad tags, etc.)
-- `AuthorizationError` — Permission denied
-- `InvalidLinkError` — Self-reference, cross-tenant, duplicate
+1. **`DotrcError` enum** — Detailed variants with rich context:
 
-Errors include context (IDs, limits) for debugging.
+   - `Validation(ValidationError)` — Invalid input (title too long, bad tags, etc.)
+   - `Authorization(AuthorizationError)` — Permission denied
+   - `InvalidLink(InvalidLinkError)` — Self-reference, cross-tenant, duplicate
+   - `NotImplemented` — Placeholder for unimplemented features
+
+2. **`DotrcErrorKind` enum** — Classification for HTTP status mapping:
+   - `Validation` — Client errors (HTTP 400)
+   - `Authorization` — Permission errors (HTTP 403)
+   - `Link` — Link operation errors (HTTP 500)
+   - `ServerError` — Unexpected/unimplemented (HTTP 500)
+
+All `DotrcError` variants expose a `.kind()` method for classification:
+
+```rust
+pub enum DotrcErrorKind {
+    Validation,    // Client error: bad input
+    Authorization, // Client error: insufficient permissions
+    Link,          // Server error: invalid link operation
+    ServerError,   // Server error: unexpected failures
+}
+```
+
+**Purpose**: Enable adapters to map errors to appropriate HTTP status codes or UI messaging without string matching:
+
+- `Validation` → HTTP 400 Bad Request
+- `Authorization` → HTTP 403 Forbidden
+- `Link` → HTTP 500 Internal Server Error
+- `ServerError` → HTTP 500 Internal Server Error
 
 ### `normalize.rs` — Validation & Canonicalization
 
@@ -167,19 +192,45 @@ can_create_link(source, target, grants, context) → Result<()>
 - Explicit principal grants confer access
 - Scope grants are provenance only (not enforcement)
 
+```mermaid
+flowchart TD
+    Start["can_view_dot(dot, grants, user)"]
+
+    Creator{"Is user the creator?<br/>(user == dot.created_by)"}
+    Grant{"Has explicit grant?<br/>(grant.user_id == user)"}
+
+    Allow["✅ Allow<br/>return Ok()"]
+    Deny["❌ Deny<br/>return Err(Authorization)"]
+
+    Start --> Creator
+    Creator -->|Yes| Allow
+    Creator -->|No| Grant
+    Grant -->|Yes| Allow
+    Grant -->|No| Deny
+
+    style Allow fill:#c8e6c9,stroke:#4caf50,stroke-width:2px
+    style Deny fill:#ffcdd2,stroke:#f44336,stroke-width:2px
+    style Creator fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    style Grant fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+```
+
+**Key Design**: Policy functions are **pure decision logic**. They don't fetch data—adapters provide all facts as inputs.
+
 ### `commands.rs` — Write-Set Handlers
 
 Commands return records to persist (no side effects):
 
 ```rust
-create_dot(draft, clock, id_gen) → Result<CreateDotResult>
-  // Returns: { dot, grants, attachments }
+create_dot<C: Clock, I: IdGen>(draft, clock: &C, id_gen: &I) → Result<CreateDotResult>
+  // Returns: { dot, grants, links }
+  // Note: clock and id_gen are trait-bounded generic references
 
-grant_access(dot, grants, users, scopes, context, clock) → Result<GrantAccessResult>
+grant_access<C: Clock>(dot, existing_grants, target_users, target_scopes, context, clock: &C) → Result<GrantAccessResult>
   // Returns: { grants: Vec<VisibilityGrant> }
 
-create_link(source, target, link_type, ...) → Result<CreateLinkResult>
+create_link<C: Clock>(from_dot, to_dot, link_type, grants, existing_links, context, clock: &C) → Result<CreateLinkResult>
   // Returns: { link: Link }
+  // Note: grants is LinkGrants { from: &[VisibilityGrant], to: &[VisibilityGrant] }
 ```
 
 Adapters persist the returned records.
@@ -203,7 +254,7 @@ Adapters bridge external systems to the pure core:
 
 ### Adapter-Specific Logic:
 
-- **Scope membership expansion**: When creating dots with scope visibility, adapters should resolve current scope members to explicit user grants in the write-set
+- **Scope membership expansion**: When creating dots with scope visibility, adapters **must** resolve current scope members to explicit user grants **before calling core**. Core receives the expanded list in `draft.visible_to_users`.
 - **Multi-tenancy**: Ensure all operations are tenant-scoped
 - **Rate limiting, quotas**: Adapters enforce, core doesn't know
 - **External API calls**: Adapters handle, core receives results as input

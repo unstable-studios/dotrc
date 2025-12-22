@@ -170,6 +170,57 @@ DotRC values correctness and trustworthiness over speed or convenience.
 
 ## Repo Hygiene and Documentation
 
-When generating or updating documentation files in the `docs/` folder, ensure that they accurately reflect the core principles and architecture of DotRC as outlined above. Documentation should be clear, concise, and focused on invariants rather than implementation details.
+### Documentation as Contract
 
-Whenever making changes to the codebase that affect core concepts (e.g., Dots, Links, ACLs), developer experience/setup, or other critical aspects, update the relevant documentation files to maintain consistency and clarity, including docs/ and the root README.md if necessary.
+Documentation in the `docs/` folder is **canonical and binding**. It describes invariants, not implementation suggestions. When code and docs disagree, this is a bug.
+
+**Before making changes:**
+
+1. Read relevant docs to understand the system's intent
+2. If changing core behavior, update docs **in the same commit**
+3. If docs are unclear or wrong, fix them
+
+**Documentation Accuracy Requirements:**
+
+When updating or reviewing documentation:
+
+- **Verify limits and constants** against actual code (e.g., `MAX_TAGS`, `MAX_TITLE_LENGTH`)
+- **Check type names and variants** match implementation (error types, enums, structs)
+- **Validate field names and schemas** against type definitions
+- **Ensure HTTP status codes** match error kind mappings in adapters
+- **Confirm terminology consistency** across all docs (use glossary as reference)
+
+**Critical areas requiring vigilance:**
+
+- `docs/data-model.md`: All field names, limits, and constraints must match `crates/dotrc-core/src/types.rs` and `normalize.rs`
+- `docs/core-architecture.md`: Error types must reflect actual `errors.rs` implementation
+- `docs/glossary.md`: Single source of truth for terminology; other docs should use these exact terms
+- `README.md`: Feature claims and architecture must align with current codebase
+
+**Documentation Review Process:**
+
+When asked to review or update documentation:
+
+1. **Cross-reference code**: Read relevant Rust files to verify claims
+2. **Check constants**: Grep for `const.*MAX`, `const.*LIMIT` to find actual values
+3. **Verify types**: Read type definitions, not just comments
+4. **Test examples**: Ensure code snippets would actually compile/work
+5. **Flag drift**: If docs don't match code, this is a P0 issue
+
+**Anti-patterns in documentation:**
+
+- ❌ "Should" language where "must" is required (e.g., "adapters should expand scopes" → "adapters must expand scopes")
+- ❌ Out-of-date limits (claiming 100 MB when code says 50 MB)
+- ❌ Missing error variants or mismatched enum names
+- ❌ Ambiguous wording that leaves implementation unclear
+- ❌ Outdated diagrams that don't reflect current architecture
+
+**When to update docs:**
+
+- Adding/changing core types → update `data-model.md`
+- Adding/changing error types → update `core-architecture.md` and `glossary.md`
+- Changing limits/constants → update relevant docs
+- Adding features → update `README.md` and feature-specific docs
+- Changing architectural patterns → update `core-architecture.md` and `overview.md`
+
+Documentation is not separate from code. It's part of the contract.

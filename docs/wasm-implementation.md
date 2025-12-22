@@ -1,8 +1,43 @@
 # WASM Layer Implementation Summary
 
-## What Was Built
-
 A production-ready WASM bridge between `dotrc-core` (pure Rust) and JavaScript/TypeScript environments.
+
+## Data Flow Architecture
+
+```mermaid
+flowchart LR
+    subgraph TS["TypeScript (Worker)"]
+        TSTypes["TypeScript Types<br/>DotDraft, DotrcError"]
+        Core["DotrcCore<br/>Wrapper Class"]
+    end
+
+    subgraph WASM["WASM Boundary"]
+        JSON1["JSON<br/>Serialization"]
+        Exports["wasm_create_dot()<br/>wasm_grant_access()<br/>wasm_create_link()"]
+        JSON2["JSON<br/>Deserialization"]
+    end
+
+    subgraph Rust["Rust Core"]
+        Types["Rust Types<br/>DotDraft, DotrcError"]
+        Commands["commands::create_dot()<br/>policy::can_view()"]
+    end
+
+    TSTypes -->|"draft object"| Core
+    Core -->|"JSON.stringify()"| JSON1
+    JSON1 -->|"&str"| Exports
+    Exports -->|"serde_json::from_str()"| Types
+    Types --> Commands
+    Commands -->|"Result<T, E>"| Types
+    Types -->|"serde_json::to_string()"| JSON2
+    JSON2 -->|"WasmResult JSON"| Core
+    Core -->|"typed object/throw"| TSTypes
+
+    style WASM fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style Rust fill:#e1f5ff,stroke:#0277bd,stroke-width:2px
+    style TS fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+```
+
+**Key Insight**: The WASM layer is a **pure serialization adapter**. No logic lives here—only type conversion.
 
 ### Files Created/Modified
 
@@ -57,9 +92,45 @@ A production-ready WASM bridge between `dotrc-core` (pure Rust) and JavaScript/T
 **Why**: Type-safe error handling in TypeScript
 
 ```typescript
+type DotrcErrorKind = "Validation" | "Authorization" | "Link" | "ServerError";
+
 type WasmResult<T> =
   | { type: "ok"; data: T }
-  | { type: "err"; kind: string; message: string };
+  | { type: "err"; kind: DotrcErrorKind; message: string };
+```
+
+Error kinds flow from Rust core → WASM → TypeScript with consistent semantics:
+
+- **Validation**: Bad input (HTTP 400)
+- **Authorization**: Permission denied (HTTP 403)
+- **Link**: Invalid link operation (HTTP 500)
+- **ServerError**: Unexpected failures (HTTP 500)
+
+This enables type-safe error handling without brittle string matching.
+
+```mermaid
+sequenceDiagram
+    participant TS as TypeScript Worker
+    participant W as WASM Layer
+    participant R as Rust Core
+
+    TS->>W: wasm_create_dot(draft_json)
+    W->>W: Parse JSON
+    W->>R: create_dot(draft)
+
+    alt Validation Error
+        R-->>W: Err(Validation(TitleTooLong))
+        W->>W: error.kind() = Validation
+        W-->>TS: { type: "err", kind: "Validation", message: "..." }
+        TS->>TS: throw new DotrcError("Validation", msg)
+        Note over TS: HTTP 400 Bad Request
+    else Success
+        R-->>W: Ok(CreateDotResult)
+        W->>W: Serialize result
+        W-->>TS: { type: "ok", data: {...} }
+        TS->>TS: return result.data
+        Note over TS: HTTP 201 Created
+    end
 ```
 
 ### 4. Small Binary Optimizations

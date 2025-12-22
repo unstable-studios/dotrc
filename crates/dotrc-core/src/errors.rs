@@ -7,6 +7,22 @@ use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use core::fmt;
 
+use serde::{Deserialize, Serialize};
+
+/// Error category for classification and HTTP status mapping
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum DotrcErrorKind {
+    /// Validation errors (invalid input, required fields, etc.)
+    Validation,
+    /// Authorization/permission errors
+    Authorization,
+    /// Link-related errors (duplicates, cross-tenant, etc.)
+    Link,
+    /// Server/internal errors
+    ServerError,
+}
+
 /// Core error types for DotRC operations
 #[cfg_attr(feature = "std", derive(Error))]
 #[derive(Debug, PartialEq, Eq)]
@@ -22,6 +38,18 @@ pub enum DotrcError {
 
     #[cfg_attr(feature = "std", error("not implemented"))]
     NotImplemented,
+}
+
+impl DotrcError {
+    /// Get the error kind for classification and HTTP status mapping
+    pub fn kind(&self) -> DotrcErrorKind {
+        match self {
+            DotrcError::Validation(_) => DotrcErrorKind::Validation,
+            DotrcError::Authorization(_) => DotrcErrorKind::Authorization,
+            DotrcError::InvalidLink(_) => DotrcErrorKind::Link,
+            DotrcError::NotImplemented => DotrcErrorKind::ServerError,
+        }
+    }
 }
 
 /// Validation errors for dot content
@@ -376,5 +404,31 @@ mod tests {
         let err1 = ValidationError::TitleRequired;
         let err2 = ValidationError::TitleRequired;
         assert_eq!(err1, err2);
+    }
+
+    #[test]
+    fn test_error_kind_validation() {
+        let err = DotrcError::Validation(ValidationError::TitleRequired);
+        assert_eq!(err.kind(), DotrcErrorKind::Validation);
+    }
+
+    #[test]
+    fn test_error_kind_authorization() {
+        let err = DotrcError::Authorization(AuthorizationError::PermissionDenied);
+        assert_eq!(err.kind(), DotrcErrorKind::Authorization);
+    }
+
+    #[test]
+    fn test_error_kind_link() {
+        let err = DotrcError::InvalidLink(InvalidLinkError::SelfReference {
+            dot_id: "dot-1".to_string(),
+        });
+        assert_eq!(err.kind(), DotrcErrorKind::Link);
+    }
+
+    #[test]
+    fn test_error_kind_server_error() {
+        let err = DotrcError::NotImplemented;
+        assert_eq!(err.kind(), DotrcErrorKind::ServerError);
     }
 }

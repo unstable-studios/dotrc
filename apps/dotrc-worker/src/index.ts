@@ -1,6 +1,7 @@
 import { DotrcCore } from "./core";
 import type { DotrcWasm } from "./core";
 import type { DotDraft, AuthContext } from "./types";
+import { DotrcError } from "./types";
 import {
   generateDotId,
   now,
@@ -167,24 +168,25 @@ export default {
           links_count: result.links.length,
         });
       } catch (err: unknown) {
-        // Handle errors from core with appropriate HTTP status codes
-        if (err instanceof Error) {
-          // Check error message for validation vs authorization vs other issues
-          // In future, use instanceof DotrcError with error.kind field for better type checking
-          const errorMsg = err.message.toLowerCase();
-          const isValidation =
-            errorMsg.includes("invalid") || errorMsg.includes("required");
-          const isAuth =
-            errorMsg.includes("unauthorized") || errorMsg.includes("forbidden");
+        // Handle errors from core with typed error kinds
+        if (err instanceof DotrcError) {
+          const status =
+            err.kind === "Validation"
+              ? 400
+              : err.kind === "Authorization"
+              ? 403
+              : 500;
 
-          const status = isAuth ? 403 : isValidation ? 400 : 500;
+          const errorCode =
+            err.kind === "Validation"
+              ? "validation_failed"
+              : err.kind === "Authorization"
+              ? "unauthorized"
+              : "internal_error";
 
           return json(status, {
-            error: isAuth
-              ? "unauthorized"
-              : isValidation
-              ? "validation_failed"
-              : "internal_error",
+            error: errorCode,
+            kind: err.kind,
             // For client errors (4xx), return the actual error message for better debugging.
             // For server errors (5xx), avoid leaking internal details.
             detail:
@@ -193,6 +195,15 @@ export default {
                 : "Request processing failed",
           });
         }
+
+        // Fallback for unexpected errors
+        if (err instanceof Error) {
+          return json(500, {
+            error: "internal_error",
+            detail: "Request processing failed",
+          });
+        }
+
         return json(500, {
           error: "internal_error",
           detail: "Unknown error",
