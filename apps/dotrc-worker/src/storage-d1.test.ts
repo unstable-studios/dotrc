@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { D1DotStorage, type D1Database } from "./storage-d1";
 import type { Dot, VisibilityGrant, Link } from "./types";
 
@@ -95,7 +95,7 @@ class MockD1Database implements D1Database {
             results: attachments as T[],
           };
         } else if (query.includes("SELECT") && query.includes("FROM visibility_grants")) {
-          const [tenant_id, dot_id] = bindings;
+          const [, dot_id] = bindings;
           const grants = self.data.grants.get(dot_id as string) || [];
           return {
             success: true,
@@ -103,7 +103,7 @@ class MockD1Database implements D1Database {
           };
         } else if (query.includes("SELECT DISTINCT") && query.includes("FROM dots")) {
           // List dots query
-          const [tenant_id, user_id, user_id2, limit, offset] = bindings;
+          const [tenant_id, user_id, , limit, offset] = bindings;
           const results: any[] = [];
           for (const [id, dot] of self.data.dots.entries()) {
             if (dot.tenant_id === tenant_id) {

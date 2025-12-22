@@ -33,7 +33,7 @@ export type JsonArray = JsonValue[];
 export type JsonSerializable = JsonValue | { [key: string]: any } | any[];
 
 import { D1DotStorage, type D1Database } from "./storage-d1";
-import { R2AttachmentStorage, type R2Bucket } from "./storage-r2";
+import { type R2Bucket } from "./storage-r2";
 
 interface Env {
   // D1 database binding for persistence
@@ -76,6 +76,44 @@ function parsePath(url: URL): string[] {
   return cleaned.split("/").filter(Boolean);
 }
 
+/**
+ * Helper function to resolve authentication context from request.
+ * Configures auth providers and validates clock skew.
+ */
+async function getAuthContext(
+  request: Request,
+  env: Env
+): Promise<(AuthContext & { tenant_id: string }) | null> {
+  // Validate and parse clock skew configuration
+  const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
+    ? Number(env.JWT_CLOCK_SKEW_SECONDS)
+    : undefined;
+  const validClockSkew =
+    clockSkewSeconds !== undefined &&
+    !isNaN(clockSkewSeconds) &&
+    Number.isFinite(clockSkewSeconds)
+      ? clockSkewSeconds
+      : undefined;
+
+  // Configure auth providers in order of preference
+  // Production: Cloudflare Access → JWT → Trusted Headers
+  // Development: Add DevelopmentProvider for local testing
+  const authProviders: AuthProvider[] = [
+    new CloudflareAccessProvider(),
+    new JWTProvider({
+      jwksUrl: env.JWT_JWKS_URL,
+      audience: env.JWT_AUDIENCE,
+      issuer: env.JWT_ISSUER,
+      symmetricKey: env.JWT_HS256_SECRET,
+      clockToleranceSeconds: validClockSkew,
+    }),
+    new TrustedHeaderProvider(),
+    new DevelopmentProvider(),
+  ];
+
+  return await resolveAuthContext(request, authProviders);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -92,34 +130,8 @@ export default {
       segments.length === 1 &&
       segments[0] === "dots"
     ) {
-      // Configure auth providers in order of preference
-      // Production: Cloudflare Access → JWT → Trusted Headers
-      // Development: Add DevelopmentProvider for local testing
-      const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
-        ? Number(env.JWT_CLOCK_SKEW_SECONDS)
-        : undefined;
-      const validClockSkew =
-        clockSkewSeconds !== undefined &&
-        !isNaN(clockSkewSeconds) &&
-        Number.isFinite(clockSkewSeconds)
-          ? clockSkewSeconds
-          : undefined;
-
-      const authProviders: AuthProvider[] = [
-        new CloudflareAccessProvider(),
-        new JWTProvider({
-          jwksUrl: env.JWT_JWKS_URL,
-          audience: env.JWT_AUDIENCE,
-          issuer: env.JWT_ISSUER,
-          symmetricKey: env.JWT_HS256_SECRET,
-          clockToleranceSeconds: validClockSkew,
-        }),
-        new TrustedHeaderProvider(),
-        new DevelopmentProvider(), // Only for testing
-      ];
-
       // Resolve auth context from trusted sources
-      const authContext = await resolveAuthContext(request, authProviders);
+      const authContext = await getAuthContext(request, env);
 
       if (!authContext) {
         return json(401, {
@@ -257,30 +269,7 @@ export default {
       const dotId = segments[1];
 
       // Resolve auth context
-      const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
-        ? Number(env.JWT_CLOCK_SKEW_SECONDS)
-        : undefined;
-      const validClockSkew =
-        clockSkewSeconds !== undefined &&
-        !isNaN(clockSkewSeconds) &&
-        Number.isFinite(clockSkewSeconds)
-          ? clockSkewSeconds
-          : undefined;
-
-      const authProviders: AuthProvider[] = [
-        new CloudflareAccessProvider(),
-        new JWTProvider({
-          jwksUrl: env.JWT_JWKS_URL,
-          audience: env.JWT_AUDIENCE,
-          issuer: env.JWT_ISSUER,
-          symmetricKey: env.JWT_HS256_SECRET,
-          clockToleranceSeconds: validClockSkew,
-        }),
-        new TrustedHeaderProvider(),
-        new DevelopmentProvider(),
-      ];
-
-      const authContext = await resolveAuthContext(request, authProviders);
+      const authContext = await getAuthContext(request, env);
 
       if (!authContext) {
         return json(401, {
@@ -344,30 +333,7 @@ export default {
       segments[0] === "dots"
     ) {
       // Resolve auth context
-      const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
-        ? Number(env.JWT_CLOCK_SKEW_SECONDS)
-        : undefined;
-      const validClockSkew =
-        clockSkewSeconds !== undefined &&
-        !isNaN(clockSkewSeconds) &&
-        Number.isFinite(clockSkewSeconds)
-          ? clockSkewSeconds
-          : undefined;
-
-      const authProviders: AuthProvider[] = [
-        new CloudflareAccessProvider(),
-        new JWTProvider({
-          jwksUrl: env.JWT_JWKS_URL,
-          audience: env.JWT_AUDIENCE,
-          issuer: env.JWT_ISSUER,
-          symmetricKey: env.JWT_HS256_SECRET,
-          clockToleranceSeconds: validClockSkew,
-        }),
-        new TrustedHeaderProvider(),
-        new DevelopmentProvider(),
-      ];
-
-      const authContext = await resolveAuthContext(request, authProviders);
+      const authContext = await getAuthContext(request, env);
 
       if (!authContext) {
         return json(401, {

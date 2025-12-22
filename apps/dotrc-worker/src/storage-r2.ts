@@ -162,6 +162,7 @@ export class R2AttachmentStorage implements AttachmentStorage {
     // Remove path separators and other dangerous characters
     return filename
       .replace(/[\/\\]/g, "_") // Replace slashes with underscores
+      .replace(/["]/g, "") // Remove quotes to prevent header injection
       .replace(/[^\w\s.-]/g, "") // Keep only alphanumeric, spaces, dots, dashes
       .substring(0, 255); // Limit to 255 chars
   }

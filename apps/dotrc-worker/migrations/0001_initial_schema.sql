@@ -83,17 +83,18 @@ CREATE INDEX IF NOT EXISTS idx_links_tenant ON links(tenant_id);
 -- Visibility Grants: Explicit, append-only ACL records
 -- At least one of user_id or scope_id must be set
 CREATE TABLE IF NOT EXISTS visibility_grants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   dot_id TEXT NOT NULL,
   user_id TEXT, -- NULL for scope grants
   scope_id TEXT, -- NULL for user grants
   granted_at TEXT NOT NULL,
   granted_by TEXT, -- Optional: who created the grant
-  PRIMARY KEY (dot_id, user_id, scope_id),
   FOREIGN KEY (dot_id) REFERENCES dots(id),
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (scope_id) REFERENCES scopes(id),
   FOREIGN KEY (granted_by) REFERENCES users(id),
-  CHECK (user_id IS NOT NULL OR scope_id IS NOT NULL)
+  CHECK (user_id IS NOT NULL OR scope_id IS NOT NULL),
+  UNIQUE (dot_id, user_id, scope_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_grants_dot ON visibility_grants(dot_id);

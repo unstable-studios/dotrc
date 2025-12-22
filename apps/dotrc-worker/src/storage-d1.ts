@@ -16,6 +16,7 @@ import type {
   Dot,
   VisibilityGrant,
   Link,
+  AttachmentRef,
   TenantId,
   DotId,
   UserId,
@@ -349,7 +350,7 @@ export class D1DotStorage implements DotStorage {
       }>();
 
     // Group attachments by dot_id
-    const attachmentsByDotId = new Map<string, any[]>();
+    const attachmentsByDotId = new Map<string, AttachmentRef[]>();
     for (const row of attachmentsResult.results || []) {
       const attachments = attachmentsByDotId.get(row.dot_id) || [];
       attachments.push({
