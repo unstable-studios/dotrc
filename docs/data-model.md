@@ -287,7 +287,7 @@ graph LR
 
 - At dot creation, visibility is captured as an **immutable snapshot**
 - Grants enumerate principals: either `user_id` OR `scope_id` (at least one)
-- Adapters should expand scope references into explicit user grants at creation
+- Adapters **must** expand scope references into explicit user grants at creation
 
 **Enforcement**:
 

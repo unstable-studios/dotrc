@@ -192,6 +192,30 @@ can_create_link(source, target, grants, context) → Result<()>
 - Explicit principal grants confer access
 - Scope grants are provenance only (not enforcement)
 
+```mermaid
+flowchart TD
+    Start["can_view_dot(dot, grants, user)"]
+
+    Creator{"Is user the creator?<br/>(user == dot.created_by)"}
+    Grant{"Has explicit grant?<br/>(grant.user_id == user)"}
+
+    Allow["✅ Allow<br/>return Ok()"]
+    Deny["❌ Deny<br/>return Err(Authorization)"]
+
+    Start --> Creator
+    Creator -->|Yes| Allow
+    Creator -->|No| Grant
+    Grant -->|Yes| Allow
+    Grant -->|No| Deny
+
+    style Allow fill:#c8e6c9,stroke:#4caf50,stroke-width:2px
+    style Deny fill:#ffcdd2,stroke:#f44336,stroke-width:2px
+    style Creator fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    style Grant fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+```
+
+**Key Design**: Policy functions are **pure decision logic**. They don't fetch data—adapters provide all facts as inputs.
+
 ### `commands.rs` — Write-Set Handlers
 
 Commands return records to persist (no side effects):
@@ -199,11 +223,12 @@ Commands return records to persist (no side effects):
 ```rust
 create_dot(draft, clock, id_gen) → Result<CreateDotResult>
   // Returns: { dot, grants, attachments }
+  // Note: Links are created separately via create_link()
 
 grant_access(dot, grants, users, scopes, context, clock) → Result<GrantAccessResult>
   // Returns: { grants: Vec<VisibilityGrant> }
 
-create_link(source, target, link_type, ...) → Result<CreateLinkResult>
+create_link(source, target, link_type, context, clock) → Result<CreateLinkResult>
   // Returns: { link: Link }
 ```
 
@@ -228,7 +253,7 @@ Adapters bridge external systems to the pure core:
 
 ### Adapter-Specific Logic:
 
-- **Scope membership expansion**: When creating dots with scope visibility, adapters should resolve current scope members to explicit user grants in the write-set
+- **Scope membership expansion**: When creating dots with scope visibility, adapters **must** resolve current scope members to explicit user grants **before calling core**. Core receives the expanded list in `draft.visible_to_users`.
 - **Multi-tenancy**: Ensure all operations are tenant-scoped
 - **Rate limiting, quotas**: Adapters enforce, core doesn't know
 - **External API calls**: Adapters handle, core receives results as input
