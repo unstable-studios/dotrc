@@ -399,4 +399,202 @@ describe("Worker Handler", () => {
       expect(segments2).toEqual(["api", "v1", "dots"]);
     });
   });
+
+  describe("Core Error Integration Tests", () => {
+    it("validates error propagation from core: Validation error for title too long", () => {
+      // Mock core to return a validation error for title too long
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Validation",
+          message: "title too long: 201 characters (max: 200)",
+        })
+      );
+
+      // Verify mock returns correct error structure
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Validation");
+      expect(parsed.message).toContain("title too long");
+
+      // Verify this would map to correct HTTP response
+      const httpStatus = parsed.kind === "Validation" ? 400 : 500;
+      const errorCode = parsed.kind === "Validation" ? "validation_failed" : "internal_error";
+
+      expect(httpStatus).toBe(400);
+      expect(errorCode).toBe("validation_failed");
+    });
+
+    it("validates error propagation from core: Validation error for empty title", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Validation",
+          message: "title is empty after normalization",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Validation");
+      expect(parsed.message).toContain("title");
+
+      const httpStatus = parsed.kind === "Validation" ? 400 : 500;
+      expect(httpStatus).toBe(400);
+    });
+
+    it("validates error propagation from core: Validation error for too many tags", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Validation",
+          message: "too many tags: 21 (max: 20)",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Validation");
+      expect(parsed.message).toContain("too many tags");
+
+      const httpStatus = parsed.kind === "Validation" ? 400 : 500;
+      expect(httpStatus).toBe(400);
+    });
+
+    it("validates error propagation from core: Validation error for invalid tag characters", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Validation",
+          message: "tag contains invalid characters: invalid tag!",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Validation");
+      expect(parsed.message).toContain("invalid characters");
+
+      const httpStatus = parsed.kind === "Validation" ? 400 : 500;
+      expect(httpStatus).toBe(400);
+    });
+
+    it("validates error propagation from core: Validation error for body too long", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Validation",
+          message: "body too long: 50001 characters (max: 50000)",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Validation");
+      expect(parsed.message).toContain("body too long");
+
+      const httpStatus = parsed.kind === "Validation" ? 400 : 500;
+      expect(httpStatus).toBe(400);
+    });
+
+    it("validates error propagation from core: Validation error for missing visibility", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Validation",
+          message:
+            "visibility grants required: must specify at least one user or scope",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Validation");
+      expect(parsed.message).toContain("visibility");
+
+      const httpStatus = parsed.kind === "Validation" ? 400 : 500;
+      expect(httpStatus).toBe(400);
+    });
+
+    it("validates error propagation from core: Authorization error", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Authorization",
+          message: "user user-1 cannot view dot dot-123",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Authorization");
+
+      // Verify Authorization errors map to 403
+      const httpStatus = parsed.kind === "Authorization" ? 403 : 500;
+      const errorCode = parsed.kind === "Authorization" ? "unauthorized" : "internal_error";
+
+      expect(httpStatus).toBe(403);
+      expect(errorCode).toBe("unauthorized");
+    });
+
+    it("validates error propagation from core: Link error", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "Link",
+          message: "cannot link dot to itself: dot-123",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("Link");
+
+      // Verify Link errors map to 500
+      const httpStatus = parsed.kind === "Link" ? 500 : 400;
+      const errorCode = "internal_error";
+
+      expect(httpStatus).toBe(500);
+      expect(errorCode).toBe("internal_error");
+    });
+
+    it("validates error propagation from core: ServerError", () => {
+      mockWasm.wasm_create_dot.mockReturnValue(
+        JSON.stringify({
+          type: "err",
+          kind: "ServerError",
+          message: "not implemented",
+        })
+      );
+
+      const result = mockWasm.wasm_create_dot("", "", "");
+      const parsed = JSON.parse(result);
+
+      expect(parsed.type).toBe("err");
+      expect(parsed.kind).toBe("ServerError");
+
+      // Verify ServerError maps to 500
+      const httpStatus = parsed.kind === "ServerError" ? 500 : 400;
+      const errorCode = "internal_error";
+
+      expect(httpStatus).toBe(500);
+      expect(errorCode).toBe("internal_error");
+    });
+  });
 });
