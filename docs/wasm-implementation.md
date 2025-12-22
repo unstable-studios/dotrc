@@ -133,6 +133,15 @@ sequenceDiagram
     end
 ```
 
+Error kinds flow from Rust core → WASM → TypeScript with consistent semantics:
+
+- **Validation**: Bad input (HTTP 400)
+- **Authorization**: Permission denied (HTTP 403)
+- **Link**: Invalid link operation (HTTP 500)
+- **ServerError**: Unexpected failures (HTTP 500)
+
+This enables type-safe error handling without brittle string matching.
+
 ### 4. Small Binary Optimizations
 
 ```toml
