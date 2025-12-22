@@ -2,13 +2,15 @@ import { DotrcCore } from "./core";
 import type { DotrcWasm } from "./core";
 import type { DotDraft, AuthContext } from "./types";
 import { DotrcError } from "./types";
+import { generateDotId, now } from "./utils";
 import {
-  generateDotId,
-  now,
-  parseTenantId,
-  parseUserId,
-  parseScopeMemberships,
-} from "./utils";
+  resolveAuthContext,
+  JWTProvider,
+  CloudflareAccessProvider,
+  TrustedHeaderProvider,
+  DevelopmentProvider,
+  type AuthProvider,
+} from "./auth";
 
 // Import WASM module functions
 // The bundler target automatically initializes the WASM module on import
@@ -88,14 +90,23 @@ export default {
       segments.length === 1 &&
       segments[0] === "dots"
     ) {
-      // Parse auth context
-      const tenantId = parseTenantId(request);
-      const userId = parseUserId(request);
+      // Configure auth providers in order of preference
+      // Production: Cloudflare Access → JWT → Trusted Headers
+      // Development: Add DevelopmentProvider for local testing
+      const authProviders: AuthProvider[] = [
+        new CloudflareAccessProvider(),
+        new JWTProvider(),
+        new TrustedHeaderProvider(),
+        new DevelopmentProvider(), // Only for testing
+      ];
 
-      if (!tenantId || !userId) {
+      // Resolve auth context from trusted sources
+      const authContext = await resolveAuthContext(request, authProviders);
+
+      if (!authContext) {
         return json(401, {
           error: "unauthorized",
-          detail: "Missing tenant or user authentication",
+          detail: "No valid authentication provided",
         });
       }
 
@@ -129,12 +140,12 @@ export default {
         });
       }
 
-      // Build dot draft
+      // Build dot draft using auth context
       const draft: DotDraft = {
         title,
         body: typeof payload.body === "string" ? payload.body : undefined,
-        created_by: userId,
-        tenant_id: tenantId,
+        created_by: authContext.requesting_user,
+        tenant_id: authContext.tenant_id, // From auth context
         scope_id:
           typeof payload.scope_id === "string" ? payload.scope_id : undefined,
         tags: Array.isArray(payload.tags)
@@ -144,7 +155,7 @@ export default {
           ? payload.visible_to_users.filter(
               (u): u is string => typeof u === "string"
             )
-          : [userId], // Default: visible to creator
+          : [authContext.requesting_user], // Default: visible to creator
         visible_to_scopes: Array.isArray(payload.visible_to_scopes)
           ? payload.visible_to_scopes.filter(
               (s): s is string => typeof s === "string"
