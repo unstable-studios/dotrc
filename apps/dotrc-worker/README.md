@@ -291,7 +291,7 @@ The worker uses Cloudflare D1 (SQLite) and R2 (object storage) for persistence:
 - **D1**: Stores dots, grants, links, tags, and metadata
 - **R2**: Stores attachment files
 
-See [STORAGE.md](STORAGE.md) for complete architecture documentation.
+See [storage.md](storage.md) for complete architecture documentation.
 
 ### Setup Storage
 

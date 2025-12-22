@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS scopes (
 CREATE INDEX IF NOT EXISTS idx_scopes_tenant ON scopes(tenant_id);
 
 -- Dots: Immutable, timestamped records
--- Title max 200 chars, body max 50k chars (enforced by core)
+-- Title and body limits enforced by core
 CREATE TABLE IF NOT EXISTS dots (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_dots_scope ON dots(scope_id);
 CREATE INDEX IF NOT EXISTS idx_dots_created_at ON dots(created_at DESC);
 
 -- Tags: Optional, sparse labels for categorization
--- Max 20 tags per dot, max 50 chars per tag (enforced by core)
+-- Tag count and length limits enforced by core
 CREATE TABLE IF NOT EXISTS tags (
   dot_id TEXT NOT NULL,
   tag TEXT NOT NULL,
@@ -102,7 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_grants_scope ON visibility_grants(scope_id);
 
 -- Attachment References: Metadata for externally stored files
 -- Actual files stored in R2, this table only holds metadata
--- Max 10 attachments per dot, max 50 MB per file (enforced by core)
+-- Attachment count and file size limits enforced by core
 CREATE TABLE IF NOT EXISTS attachment_refs (
   id TEXT PRIMARY KEY,
   dot_id TEXT NOT NULL,
