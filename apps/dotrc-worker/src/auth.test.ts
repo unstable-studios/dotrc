@@ -97,7 +97,7 @@ async function generateRsaKeyPair(): Promise<{
   publicKey: CryptoKey;
   publicJwk: JsonWebKey;
 }> {
-  const keyPair = await crypto.subtle.generateKey(
+  const keyPair = (await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
       modulusLength: 2048,
@@ -106,9 +106,12 @@ async function generateRsaKeyPair(): Promise<{
     },
     true,
     ["sign", "verify"]
-  );
+  )) as CryptoKeyPair;
 
-  const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const publicJwk = (await crypto.subtle.exportKey(
+    "jwk",
+    keyPair.publicKey
+  )) as JsonWebKey;
 
   return {
     privateKey: keyPair.privateKey,
