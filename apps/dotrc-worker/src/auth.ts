@@ -321,8 +321,11 @@ export class JWTProvider implements AuthProvider {
         if (match) {
           return this.isRsaKey(match) ? match : null;
         }
+        // If JWT specifies a kid but no match found, don't fall back to single key
+        return null;
       }
 
+      // Only use single key fallback when JWT doesn't specify a kid
       if (keys.length === 1 && this.isRsaKey(keys[0])) {
         return keys[0];
       }
