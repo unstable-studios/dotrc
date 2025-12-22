@@ -6,6 +6,7 @@ export default {
     (message) => /^Merge\b/.test(message),
     (message) => /^Update\b/.test(message),
     (message) => /Co-authored-by:\s*Copilot\b/.test(message),
+    (message) => /^Initial plan\b/i.test(message),
   ],
   rules: {
     // Allow empty scope
