@@ -42,4 +42,5 @@ wrangler.toml.local
 
 # --- Misc ---
 coverage/
-*.logpackage-lock.json
+*.log
+package-lock.json
