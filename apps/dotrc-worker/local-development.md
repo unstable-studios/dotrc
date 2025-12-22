@@ -104,11 +104,16 @@ You can test different providers without changing code:
 ### Test JWT Provider
 
 ```bash
-# Create a test token at jwt.io
+# Create a test token at jwt.io (HS256) and start dev server with the same secret
+JWT_HS256_SECRET=dev-secret-key pnpm run dev
+
+# In another terminal, send the signed token
 curl -X POST http://localhost:8787/dots \
   -H "Authorization: Bearer eyJ..." \
   -d '{"title": "JWT Test", ...}'
 ```
+
+Tokens signed with the wrong secret are rejected; the worker will continue to the next configured provider.
 
 ### Test Trusted Headers
 

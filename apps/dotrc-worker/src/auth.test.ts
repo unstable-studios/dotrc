@@ -7,9 +7,70 @@ import {
   resolveAuthContext,
 } from "./auth";
 
+const encoder = new TextEncoder();
+
+function base64UrlEncode(data: Uint8Array): string {
+  if (typeof btoa === "function") {
+    let binary = "";
+    for (const byte of data) {
+      binary += String.fromCharCode(byte);
+    }
+    return btoa(binary)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+  }
+
+  const maybeBuffer = (
+    globalThis as {
+      Buffer?: {
+        from(data: Uint8Array): { toString(encoding: string): string };
+      };
+    }
+  ).Buffer;
+
+  if (maybeBuffer) {
+    return maybeBuffer
+      .from(data)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+  }
+
+  throw new Error("Base64 encoding not supported in this environment");
+}
+
+function base64UrlEncodeJson(value: unknown): string {
+  return base64UrlEncode(encoder.encode(JSON.stringify(value)));
+}
+
+async function createHs256Token(
+  payload: Record<string, unknown>,
+  secret: string
+): Promise<string> {
+  const headerSegment = base64UrlEncodeJson({ alg: "HS256", typ: "JWT" });
+  const payloadSegment = base64UrlEncodeJson(payload);
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const data = encoder.encode(`${headerSegment}.${payloadSegment}`);
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, data));
+  const signatureSegment = base64UrlEncode(signature);
+
+  return `${headerSegment}.${payloadSegment}.${signatureSegment}`;
+}
+
 describe("Auth Providers", () => {
   describe("JWTProvider", () => {
-    const provider = new JWTProvider();
+    const secret = "test-secret";
+    const provider = new JWTProvider({ symmetricKey: secret });
 
     it("recognizes Bearer token", () => {
       const request = new Request("http://localhost", {
@@ -29,10 +90,18 @@ describe("Auth Providers", () => {
 
     it("extracts claims from JWT payload", async () => {
       // Base64 encoded payload: {"sub":"user-123","tenant":"tenant-456","scope":"scope-1 scope-2"}
+      const token = await createHs256Token(
+        {
+          sub: "user-123",
+          tenant: "tenant-456",
+          scope: "scope-1 scope-2",
+        },
+        secret
+      );
+
       const request = new Request("http://localhost", {
         headers: {
-          authorization:
-            "Bearer header.eyJzdWIiOiJ1c2VyLTEyMyIsInRlbmFudCI6InRlbmFudC00NTYiLCJzY29wZSI6InNjb3BlLTEgc2NvcGUtMiJ9.sig",
+          authorization: `Bearer ${token}`,
         },
       });
 
@@ -47,6 +116,38 @@ describe("Auth Providers", () => {
     it("returns null for malformed JWT", async () => {
       const request = new Request("http://localhost", {
         headers: { authorization: "Bearer invalid" },
+      });
+
+      const result = await provider.extract(request);
+      expect(result).toBeNull();
+    });
+
+    it("rejects invalid signatures", async () => {
+      const tampered = await createHs256Token(
+        { sub: "user-123", tenant: "tenant-456" },
+        "wrong-secret"
+      );
+
+      const request = new Request("http://localhost", {
+        headers: { authorization: `Bearer ${tampered}` },
+      });
+
+      const result = await provider.extract(request);
+      expect(result).toBeNull();
+    });
+
+    it("rejects expired tokens", async () => {
+      const token = await createHs256Token(
+        {
+          sub: "user-123",
+          tenant: "tenant-456",
+          exp: Math.floor(Date.now() / 1000) - 120,
+        },
+        secret
+      );
+
+      const request = new Request("http://localhost", {
+        headers: { authorization: `Bearer ${token}` },
       });
 
       const result = await provider.extract(request);

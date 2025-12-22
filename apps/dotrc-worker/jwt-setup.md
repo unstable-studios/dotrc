@@ -1,6 +1,14 @@
 # JWT/OIDC Provider Setup
 
-The JWT provider works with any OIDC-compliant issuer. It extracts claims from Bearer tokens.
+The JWT provider works with any OIDC-compliant issuer. It verifies signatures and extracts claims from Bearer tokens.
+
+## Verification Requirements
+
+All tokens must be signed. The worker rejects unsigned or invalid signatures.
+
+- **RS256 (recommended)**: set `JWT_JWKS_URL` to your issuer JWKS endpoint (e.g., `https://<domain>/.well-known/jwks.json`). Optional: set `JWT_ISSUER` and `JWT_AUDIENCE` to enforce issuer and audience checks.
+- **HS256 (dev/local)**: set `JWT_HS256_SECRET` to the shared secret used to sign tokens. Do not use HS256 in production unless you control both issuer and consumer.
+- **Clock tolerance**: optional `JWT_CLOCK_SKEW_SECONDS` (default 60) to allow minor clock drift for `exp`/`nbf` claims.
 
 ## Supported Services
 
@@ -54,7 +62,7 @@ Then send the ID token as `Authorization: Bearer <token>`.
 }
 ```
 
-Use the `id_token` (which includes custom claims) as your Bearer token.
+Use the `id_token` (which includes custom claims) as your Bearer token. For Auth0/Okta RS256 defaults, set `JWT_JWKS_URL` to the issuer JWKS endpoint.
 
 ### Azure AD / Entra ID
 
@@ -104,7 +112,7 @@ curl -X POST https://token.actions.githubusercontent.com/getToken \
 }
 ```
 
-Map these to DotRC format in your client.
+Map these to DotRC format in your client. Set `JWT_JWKS_URL` to the GitHub issuer JWKS endpoint if verifying RS256 tokens.
 
 ### Google OAuth 2.0
 
@@ -168,11 +176,13 @@ All JWT tokens should contain these claims:
 2. **Send request**:
 
 ```bash
+JWT_HS256_SECRET=dev-secret-key pnpm run dev  # or wrangler dev --var JWT_HS256_SECRET=dev-secret-key
+
 curl -H "Authorization: Bearer eyJ..." \
   http://localhost:8787/dots
 ```
 
-3. **If JWT provider can't decode**, it falls back to next provider (TrustedHeaderProvider or DevelopmentProvider).
+3. **If JWT provider can't verify** (bad signature, wrong secret, missing claims), it falls back to the next provider (TrustedHeaderProvider or DevelopmentProvider).
 
 ## Token Claims Reference
 
