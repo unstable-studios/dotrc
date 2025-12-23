@@ -27,23 +27,20 @@ export type JsonValue =
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonArray = JsonValue[];
 
-// D1 database binding (optional, persistence not yet wired)
-interface D1Result<T = unknown> {
-  success: boolean;
-  error?: string;
-  results?: T[];
-}
-interface D1PreparedStatement {
-  bind(...values: unknown[]): D1PreparedStatement;
-  run<T = unknown>(): Promise<D1Result<T>>;
-}
-interface D1Database {
-  prepare(query: string): D1PreparedStatement;
-}
+// Helper type for values that are JSON-serializable
+// This is intentionally broad to allow domain types (like Dot) that don't have
+// index signatures but are structurally JSON-serializable
+export type JsonSerializable = JsonValue | { [key: string]: any } | any[];
+
+import { D1DotStorage, type D1Database } from "./storage-d1";
+import { type R2Bucket } from "./storage-r2";
 
 interface Env {
-  // Optional: D1 database binding will be configured when persistence is implemented
+  // D1 database binding for persistence
   DB?: D1Database;
+  // R2 bucket binding for attachment storage
+  ATTACHMENTS?: R2Bucket;
+  // JWT configuration
   JWT_JWKS_URL?: string;
   JWT_AUDIENCE?: string;
   JWT_ISSUER?: string;
@@ -56,7 +53,7 @@ const core = new DotrcCore(wasm as DotrcWasm);
 
 function json(
   status: number,
-  body: JsonValue,
+  body: JsonSerializable,
   headers: HeadersInit = {}
 ): Response {
   return new Response(JSON.stringify(body), {
@@ -79,6 +76,44 @@ function parsePath(url: URL): string[] {
   return cleaned.split("/").filter(Boolean);
 }
 
+/**
+ * Helper function to resolve authentication context from request.
+ * Configures auth providers and validates clock skew.
+ */
+async function getAuthContext(
+  request: Request,
+  env: Env
+): Promise<(AuthContext & { tenant_id: string }) | null> {
+  // Validate and parse clock skew configuration
+  const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
+    ? Number(env.JWT_CLOCK_SKEW_SECONDS)
+    : undefined;
+  const validClockSkew =
+    clockSkewSeconds !== undefined &&
+    !isNaN(clockSkewSeconds) &&
+    Number.isFinite(clockSkewSeconds)
+      ? clockSkewSeconds
+      : undefined;
+
+  // Configure auth providers in order of preference
+  // Production: Cloudflare Access → JWT → Trusted Headers
+  // Development: Add DevelopmentProvider for local testing
+  const authProviders: AuthProvider[] = [
+    new CloudflareAccessProvider(),
+    new JWTProvider({
+      jwksUrl: env.JWT_JWKS_URL,
+      audience: env.JWT_AUDIENCE,
+      issuer: env.JWT_ISSUER,
+      symmetricKey: env.JWT_HS256_SECRET,
+      clockToleranceSeconds: validClockSkew,
+    }),
+    new TrustedHeaderProvider(),
+    new DevelopmentProvider(),
+  ];
+
+  return await resolveAuthContext(request, authProviders);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -95,34 +130,8 @@ export default {
       segments.length === 1 &&
       segments[0] === "dots"
     ) {
-      // Configure auth providers in order of preference
-      // Production: Cloudflare Access → JWT → Trusted Headers
-      // Development: Add DevelopmentProvider for local testing
-      const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
-        ? Number(env.JWT_CLOCK_SKEW_SECONDS)
-        : undefined;
-      const validClockSkew =
-        clockSkewSeconds !== undefined &&
-        !isNaN(clockSkewSeconds) &&
-        Number.isFinite(clockSkewSeconds)
-          ? clockSkewSeconds
-          : undefined;
-
-      const authProviders: AuthProvider[] = [
-        new CloudflareAccessProvider(),
-        new JWTProvider({
-          jwksUrl: env.JWT_JWKS_URL,
-          audience: env.JWT_AUDIENCE,
-          issuer: env.JWT_ISSUER,
-          symmetricKey: env.JWT_HS256_SECRET,
-          clockToleranceSeconds: validClockSkew,
-        }),
-        new TrustedHeaderProvider(),
-        new DevelopmentProvider(), // Only for testing
-      ];
-
       // Resolve auth context from trusted sources
-      const authContext = await resolveAuthContext(request, authProviders);
+      const authContext = await getAuthContext(request, env);
 
       if (!authContext) {
         return json(401, {
@@ -191,7 +200,15 @@ export default {
         const dotId = generateDotId();
         const result = core.createDot(draft, timestamp, dotId);
 
-        // TODO: Persist result.dot, result.grants, result.links to D1
+        // Persist to D1 if available
+        if (env.DB) {
+          const storage = new D1DotStorage(env.DB);
+          await storage.storeDot({
+            dot: result.dot,
+            grants: result.grants,
+            links: result.links,
+          });
+        }
 
         return json(201, {
           dot_id: result.dot.id,
@@ -233,6 +250,131 @@ export default {
           return json(500, {
             error: "internal_error",
             detail: "Request processing failed",
+          });
+        }
+
+        return json(500, {
+          error: "internal_error",
+          detail: "Unknown error",
+        });
+      }
+    }
+
+    // GET /dots/:dotId - Retrieve a specific dot
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "dots"
+    ) {
+      const dotId = segments[1];
+
+      // Resolve auth context
+      const authContext = await getAuthContext(request, env);
+
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      // Retrieve from D1 if available
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const dot = await storage.getDot(authContext.tenant_id, dotId);
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Dot not found",
+          });
+        }
+
+        // Check if user can view this dot
+        const grants = await storage.getGrants(authContext.tenant_id, dotId);
+        const canView =
+          dot.created_by === authContext.requesting_user ||
+          grants.some((g) => g.user_id === authContext.requesting_user);
+
+        if (!canView) {
+          return json(403, {
+            error: "forbidden",
+            detail: "You do not have permission to view this dot",
+          });
+        }
+
+        return json(200, dot);
+      } catch (err: unknown) {
+        if (err instanceof Error) {
+          return json(500, {
+            error: "internal_error",
+            detail: "Failed to retrieve dot",
+          });
+        }
+
+        return json(500, {
+          error: "internal_error",
+          detail: "Unknown error",
+        });
+      }
+    }
+
+    // GET /dots - List dots for current user
+    if (
+      request.method === "GET" &&
+      segments.length === 1 &&
+      segments[0] === "dots"
+    ) {
+      // Resolve auth context
+      const authContext = await getAuthContext(request, env);
+
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      // Retrieve from D1 if available
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      try {
+        const url = new URL(request.url);
+        const limit = parseInt(url.searchParams.get("limit") || "50", 10);
+        const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+
+        const storage = new D1DotStorage(env.DB);
+        const result = await storage.listDotsForUser({
+          tenantId: authContext.tenant_id,
+          userId: authContext.requesting_user,
+          limit,
+          offset,
+        });
+
+        return json(200, {
+          dots: result.dots,
+          total: result.total,
+          has_more: result.hasMore,
+          limit,
+          offset,
+        });
+      } catch (err: unknown) {
+        if (err instanceof Error) {
+          return json(500, {
+            error: "internal_error",
+            detail: "Failed to list dots",
           });
         }
 

@@ -283,3 +283,63 @@ None yet. Configuration will be added for:
 - Slack API credentials
 - JWT signing keys
 - Feature flags
+
+## Storage Layer
+
+The worker uses Cloudflare D1 (SQLite) and R2 (object storage) for persistence:
+
+- **D1**: Stores dots, grants, links, tags, and metadata
+- **R2**: Stores attachment files
+
+See [storage.md](storage.md) for complete architecture documentation.
+
+### Setup Storage
+
+1. **Create D1 Database:**
+   ```bash
+   wrangler d1 create dotrc
+   ```
+   
+2. **Update `wrangler.jsonc`** with the database ID
+
+3. **Run migrations:**
+   ```bash
+   wrangler d1 migrations apply dotrc --local  # For development
+   wrangler d1 migrations apply dotrc          # For production
+   ```
+
+4. **Create R2 Bucket (optional, for attachments):**
+   ```bash
+   wrangler r2 bucket create dotrc-attachments
+   ```
+
+### Storage Interfaces
+
+The storage layer uses clean abstractions:
+
+- `DotStorage`: Interface for dot persistence
+- `D1DotStorage`: D1 implementation
+- `AttachmentStorage`: Interface for file storage
+- `R2AttachmentStorage`: R2 implementation
+
+See `src/storage.ts` for interface definitions and `src/storage-d1.ts`, `src/storage-r2.ts` for implementations.
+
+## Authentication
+
+Multiple authentication methods supported. See the comprehensive auth documentation:
+
+- **[auth-index.md](auth-index.md)** — Complete documentation map
+- **[quick-start.md](quick-start.md)** — 5-minute setup guide
+- **[trusted-auth.md](trusted-auth.md)** — Architecture overview
+
+**Setup guides:**
+
+- [jwt-setup.md](jwt-setup.md) — OIDC providers (Auth0, Okta, Azure AD, GitHub, Google)
+- [cloudflare-access-setup.md](cloudflare-access-setup.md) — Cloudflare Access
+- [trusted-headers-setup.md](trusted-headers-setup.md) — Reverse proxy (nginx, Traefik, K8s)
+- [local-development.md](local-development.md) — Testing & debugging
+
+**Security:**
+
+- [auth-security.md](auth-security.md) — Best practices
+- [auth-checklist.md](auth-checklist.md) — Pre-deployment verification

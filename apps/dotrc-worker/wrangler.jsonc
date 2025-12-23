@@ -2,13 +2,29 @@
   // Cloudflare Worker config
   "name": "dotrc-worker",
   "main": "src/index.ts",
-  "compatibility_date": "2025-12-20"
-  // TODO: add D1 binding when persistence is wired
+  "compatibility_date": "2025-12-20",
+  
+  // D1 database binding for persistence
+  // To use:
+  // 1. Create D1 database: wrangler d1 create dotrc
+  // 2. Run migrations: wrangler d1 migrations apply dotrc --local
+  // 3. Update database_id below with your D1 database ID
   // "d1_databases": [
   //   {
   //     "binding": "DB",
   //     "database_name": "dotrc",
-  //     "database_id": "REPLACE_WITH_D1_ID"
+  //     "database_id": "YOUR_D1_DATABASE_ID"
+  //   }
+  // ],
+  
+  // R2 bucket binding for attachment storage
+  // To use:
+  // 1. Create R2 bucket: wrangler r2 bucket create dotrc-attachments
+  // 2. Uncomment the section below
+  // "r2_buckets": [
+  //   {
+  //     "binding": "ATTACHMENTS",
+  //     "bucket_name": "dotrc-attachments"
   //   }
   // ]
 }
