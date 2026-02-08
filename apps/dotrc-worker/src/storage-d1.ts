@@ -66,80 +66,116 @@ export class D1DotStorage implements DotStorage {
    * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
    */
   async ensureTenant(tenantId: TenantId, now: string): Promise<void> {
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO tenants (id, name, created_at) VALUES (?, ?, ?)`
       )
       .bind(tenantId, tenantId, now)
       .run();
+    if (!result.success) {
+      throw new Error(`Failed to ensure tenant ${tenantId}: ${result.error}`);
+    }
   }
 
   /**
    * Ensure a user exists within a tenant, creating it idempotently if not.
-   * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
+   * Verifies tenant isolation: if the user already exists under a different
+   * tenant, throws an error to prevent cross-tenant identity reuse.
    */
   async ensureUser(
     userId: UserId,
     tenantId: TenantId,
     now: string
   ): Promise<void> {
-    await this.ensureTenant(tenantId, now);
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO users (id, tenant_id, display_name, created_at) VALUES (?, ?, ?, ?)`
       )
       .bind(userId, tenantId, userId, now)
       .run();
+    if (!result.success) {
+      throw new Error(`Failed to ensure user ${userId}: ${result.error}`);
+    }
+
+    // Verify tenant isolation: the existing row's tenant must match
+    const existing = await this.db
+      .prepare(`SELECT tenant_id FROM users WHERE id = ?`)
+      .bind(userId)
+      .first<{ tenant_id: string }>();
+    if (existing && existing.tenant_id !== tenantId) {
+      throw new Error(
+        `User ${userId} belongs to tenant ${existing.tenant_id}, not ${tenantId}`
+      );
+    }
   }
 
   /**
    * Ensure a scope exists within a tenant, creating it idempotently if not.
-   * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
+   * Verifies tenant isolation: if the scope already exists under a different
+   * tenant, throws an error to prevent cross-tenant scope reuse.
    */
   async ensureScope(
     scopeId: ScopeId,
     tenantId: TenantId,
     now: string
   ): Promise<void> {
-    await this.ensureTenant(tenantId, now);
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO scopes (id, tenant_id, name, type, created_at) VALUES (?, ?, ?, ?, ?)`
       )
       .bind(scopeId, tenantId, scopeId, "auto", now)
       .run();
+    if (!result.success) {
+      throw new Error(`Failed to ensure scope ${scopeId}: ${result.error}`);
+    }
+
+    // Verify tenant isolation: the existing row's tenant must match
+    const existing = await this.db
+      .prepare(`SELECT tenant_id FROM scopes WHERE id = ?`)
+      .bind(scopeId)
+      .first<{ tenant_id: string }>();
+    if (existing && existing.tenant_id !== tenantId) {
+      throw new Error(
+        `Scope ${scopeId} belongs to tenant ${existing.tenant_id}, not ${tenantId}`
+      );
+    }
   }
 
   /**
    * Ensure all referenced users and scopes exist before storing a dot.
    * This implements lazy creation: entities are auto-created on first reference.
+   * Deduplicates IDs to avoid redundant INSERT OR IGNORE calls.
    */
   async ensureEntities(request: StoreDotRequest, now: string): Promise<void> {
     const { dot, grants } = request;
 
-    // Ensure tenant exists
+    // Collect all distinct user and scope IDs
+    const userIds = new Set<string>();
+    const scopeIds = new Set<string>();
+
+    userIds.add(dot.created_by);
+    if (dot.scope_id) {
+      scopeIds.add(dot.scope_id);
+    }
+
+    for (const grant of grants) {
+      if (grant.user_id) userIds.add(grant.user_id);
+      if (grant.scope_id) scopeIds.add(grant.scope_id);
+      if (grant.granted_by) userIds.add(grant.granted_by);
+    }
+
+    // Ensure tenant first (single call)
     await this.ensureTenant(dot.tenant_id, now);
 
-    // Ensure the creator user exists
-    await this.ensureUser(dot.created_by, dot.tenant_id, now);
+    // Ensure all distinct users (no redundant tenant ensures)
+    await Promise.all(
+      Array.from(userIds, (userId) => this.ensureUser(userId, dot.tenant_id, now))
+    );
 
-    // Ensure scope exists if specified
-    if (dot.scope_id) {
-      await this.ensureScope(dot.scope_id, dot.tenant_id, now);
-    }
-
-    // Ensure all granted users and scopes exist
-    for (const grant of grants) {
-      if (grant.user_id) {
-        await this.ensureUser(grant.user_id, dot.tenant_id, now);
-      }
-      if (grant.scope_id) {
-        await this.ensureScope(grant.scope_id, dot.tenant_id, now);
-      }
-      if (grant.granted_by) {
-        await this.ensureUser(grant.granted_by, dot.tenant_id, now);
-      }
-    }
+    // Ensure all distinct scopes
+    await Promise.all(
+      Array.from(scopeIds, (scopeId) => this.ensureScope(scopeId, dot.tenant_id, now))
+    );
   }
 
   /**
