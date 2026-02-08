@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo *)",
+      "Bash(pnpm *)",
+      "Bash(node *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git log *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git merge-base *)",
+      "Bash(git fetch *)",
+      "Bash(git rebase *)",
+      "Bash(gh issue *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr view *)",
+      "Bash(gh api *)",
+      "Bash(./scripts/*)",
+      "Bash(wasm-bindgen *)",
+      "WebFetch(domain:github.com)",
+      "WebSearch"
+    ]
+  }
+}

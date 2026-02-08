@@ -94,3 +94,33 @@ Scopes: `core`, `wasm`, `server`, `worker`, `web`, `sdk`, `docs`, `repo`, `infra
 ## Documentation
 
 The `docs/` folder is **canonical and binding**. When code and docs disagree, it's a bug. If changing core behavior, update docs in the same commit. Key docs: `overview.md`, `core-architecture.md`, `data-model.md`, `glossary.md`.
+
+## Autonomous Issue Workflow
+
+When given a list of GitHub issues to implement as stacked PRs:
+
+1. **Read all issues first** with `gh issue view <number>` to understand scope and ordering.
+2. **Work in order.** Each issue gets its own branch based on the previous one (stacked):
+   - Issue 1: `git checkout -b issue-<N1> main`
+   - Issue 2: `git checkout -b issue-<N2> issue-<N1>`
+   - Issue 3: `git checkout -b issue-<N3> issue-<N2>`
+3. **For each issue:**
+   - Create the branch from the previous branch (or main for the first)
+   - Implement the change, following the architecture and domain rules above
+   - Run `make test` (or the relevant subset) and fix until passing
+   - Run `make lint` and fix any issues
+   - Commit with conventional format: `type(scope): description` — include `Fixes #<number>` in the commit body
+   - Push: `git push -u origin <branch>`
+   - Create PR with `gh pr create --base <previous-branch> --title "..." --body "..."`
+4. **PR body format:**
+   ```
+   ## Summary
+   <what and why>
+
+   Fixes #<number>
+
+   ## Test plan
+   - [ ] <verification steps>
+   ```
+5. **If stuck on an issue**, skip it — create a comment on the issue explaining what blocked you and move to the next one.
+6. **Never force-push or rewrite history** on branches that already have PRs.
