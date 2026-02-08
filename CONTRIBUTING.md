@@ -129,7 +129,7 @@ This means:
 - No separate admin endpoint or migration is needed to seed users/scopes
 - The first API request from a new user automatically provisions their identity
 - Duplicate creation attempts are silently ignored (idempotent)
-- Display names default to the user/scope ID and can be updated later
+- Display names currently default to the user/scope ID; there is no endpoint yet to update them
 
 ## Architecture Principles
 

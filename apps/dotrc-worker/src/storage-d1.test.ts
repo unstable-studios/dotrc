@@ -76,7 +76,7 @@ class MockD1Database implements D1Database {
           const tags = self.data.tags.get(dot_id as string) || [];
           tags.push(tag as string);
           self.data.tags.set(dot_id as string, tags);
-        } else if (query.includes("INSERT INTO visibility_grants")) {
+        } else if (query.includes("INSERT") && query.includes("visibility_grants")) {
           const [dot_id, user_id, scope_id, granted_at, granted_by] = bindings;
           const grants = self.data.grants.get(dot_id as string) || [];
           grants.push({ dot_id, user_id, scope_id, granted_at, granted_by });
@@ -96,6 +96,18 @@ class MockD1Database implements D1Database {
         return { success: true, meta: {} };
       },
       async first<T = unknown>(): Promise<T | null> {
+        if (query.includes("SELECT tenant_id FROM users")) {
+          const [id] = bindings;
+          const user = self.data.users.get(id as string);
+          if (!user) return null;
+          return { tenant_id: user.tenant_id } as T;
+        }
+        if (query.includes("SELECT tenant_id FROM scopes")) {
+          const [id] = bindings;
+          const scope = self.data.scopes.get(id as string);
+          if (!scope) return null;
+          return { tenant_id: scope.tenant_id } as T;
+        }
         if (query.includes("SELECT") && query.includes("FROM dots")) {
           const [tenant_id, dot_id] = bindings;
           const dot = self.data.dots.get(dot_id as string);
@@ -128,6 +140,20 @@ class MockD1Database implements D1Database {
             success: true,
             results: grants as T[],
           };
+        } else if (query.includes("SELECT") && query.includes("FROM links")) {
+          const [tenant_id, dot_id] = bindings;
+          const results: any[] = [];
+          for (const [, links] of self.data.links.entries()) {
+            for (const link of links) {
+              if (
+                link.tenant_id === tenant_id &&
+                (link.from_dot_id === dot_id || link.to_dot_id === dot_id)
+              ) {
+                results.push(link);
+              }
+            }
+          }
+          return { success: true, results: results as T[] };
         } else if (query.includes("SELECT DISTINCT") && query.includes("FROM dots")) {
           // List dots query
           const [tenant_id, user_id, , limit, offset] = bindings;
@@ -503,6 +529,89 @@ describe("D1DotStorage", () => {
       await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
       await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T01:00:00Z");
       expect(db.getScopes().get("scope-1").created_at).toBe("2025-12-22T00:00:00Z");
+    });
+  });
+
+  describe("cross-tenant isolation", () => {
+    it("throws on cross-tenant user ID collision", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureTenant("tenant-2", "2025-12-22T00:00:00Z");
+      await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
+      await expect(
+        storage.ensureUser("user-1", "tenant-2", "2025-12-22T00:00:00Z")
+      ).rejects.toThrow("User user-1 belongs to tenant tenant-1, not tenant-2");
+    });
+
+    it("throws on cross-tenant scope ID collision", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureTenant("tenant-2", "2025-12-22T00:00:00Z");
+      await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
+      await expect(
+        storage.ensureScope("scope-1", "tenant-2", "2025-12-22T00:00:00Z")
+      ).rejects.toThrow("Scope scope-1 belongs to tenant tenant-1, not tenant-2");
+    });
+  });
+
+  describe("storeGrants", () => {
+    it("stores additional grants for an existing dot", async () => {
+      const dot: Dot = {
+        id: "dot-g1",
+        tenant_id: "tenant-1",
+        title: "Grant Test",
+        created_by: "user-1",
+        created_at: "2025-12-22T00:00:00Z",
+        tags: [],
+        attachments: [],
+      };
+
+      await storage.storeDot({
+        dot,
+        grants: [
+          {
+            dot_id: "dot-g1",
+            user_id: "user-1",
+            granted_at: "2025-12-22T00:00:00Z",
+          },
+        ],
+        links: [],
+      });
+
+      await storage.storeGrants([
+        {
+          dot_id: "dot-g1",
+          user_id: "user-2",
+          granted_at: "2025-12-22T00:01:00Z",
+          granted_by: "user-1",
+        },
+      ]);
+
+      const grants = await storage.getGrants("tenant-1", "dot-g1");
+      expect(grants).toHaveLength(2);
+      expect(grants.map((g) => g.user_id)).toContain("user-2");
+    });
+
+    it("is a no-op for empty grants array", async () => {
+      await expect(storage.storeGrants([])).resolves.toBeUndefined();
+    });
+  });
+
+  describe("storeLink", () => {
+    it("stores a link between two dots", async () => {
+      await storage.storeLink(
+        {
+          from_dot_id: "dot-a",
+          to_dot_id: "dot-b",
+          link_type: "followup",
+          created_at: "2025-12-22T00:00:00Z",
+        },
+        "tenant-1"
+      );
+
+      const links = await storage.getLinks("tenant-1", "dot-a");
+      expect(links).toHaveLength(1);
+      expect(links[0].from_dot_id).toBe("dot-a");
+      expect(links[0].to_dot_id).toBe("dot-b");
+      expect(links[0].link_type).toBe("followup");
     });
   });
 

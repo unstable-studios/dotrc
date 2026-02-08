@@ -440,7 +440,7 @@ export default {
       if (userIds.length === 0 && scopeIds.length === 0) {
         return json(400, {
           error: "invalid_body",
-          detail: "At least one user_id or scope_id is required",
+          detail: "At least one entry in user_ids or scope_ids is required",
         });
       }
 
