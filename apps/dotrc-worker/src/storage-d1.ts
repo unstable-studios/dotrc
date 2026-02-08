@@ -489,7 +489,7 @@ export class D1DotStorage implements DotStorage {
     dotId: DotId,
     attachment: AttachmentRef
   ): Promise<void> {
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT INTO attachment_refs (
           id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at
@@ -506,6 +506,11 @@ export class D1DotStorage implements DotStorage {
         attachment.created_at
       )
       .run();
+    if (!result.success) {
+      throw new Error(
+        `Failed to store attachment ref ${attachment.id}: ${result.error}`
+      );
+    }
   }
 
   /**

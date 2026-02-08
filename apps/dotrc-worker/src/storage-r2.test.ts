@@ -55,14 +55,13 @@ class MockR2Bucket implements R2Bucket {
 
   private makeR2Object(
     key: string,
-    data: ArrayBuffer | SharedArrayBuffer,
+    data: ArrayBuffer,
     options?: R2PutOptions
   ): R2Object {
-    const buf = data as ArrayBuffer;
     return {
       key,
       version: "1",
-      size: buf.byteLength,
+      size: data.byteLength,
       etag: "mock-etag",
       httpEtag: '"mock-etag"',
       checksums: {},
@@ -70,16 +69,16 @@ class MockR2Bucket implements R2Bucket {
       customMetadata: options?.customMetadata || {},
       uploaded: new Date(),
       async arrayBuffer() {
-        return buf;
+        return data;
       },
       async text() {
-        return new TextDecoder().decode(buf);
+        return new TextDecoder().decode(data);
       },
       async json<T>() {
-        return JSON.parse(new TextDecoder().decode(buf)) as T;
+        return JSON.parse(new TextDecoder().decode(data)) as T;
       },
       async blob() {
-        return new Blob([buf]);
+        return new Blob([data]);
       },
     };
   }

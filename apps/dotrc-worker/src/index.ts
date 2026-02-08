@@ -857,6 +857,35 @@ export default {
         });
       }
 
+      // Early size check via Content-Length header (before buffering the body)
+      const contentLength = request.headers.get("content-length");
+      const maxSize = 10 * 1024 * 1024;
+      if (contentLength && parseInt(contentLength, 10) > maxSize) {
+        return json(413, {
+          error: "file_too_large",
+          detail: `File exceeds maximum size of ${maxSize} bytes`,
+        });
+      }
+
+      // Parse multipart form data
+      const reqContentType = request.headers.get("content-type") || "";
+      if (!reqContentType.includes("multipart/form-data")) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected multipart/form-data",
+        });
+      }
+
+      let formData: FormData;
+      try {
+        formData = await request.formData();
+      } catch (err) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Failed to parse multipart form data",
+        });
+      }
+
       try {
         const storage = new D1DotStorage(env.DB);
         const dot = await storage.getDot(authContext.tenant_id, dotId);
@@ -876,16 +905,15 @@ export default {
           });
         }
 
-        // Parse multipart form data
-        const contentType = request.headers.get("content-type") || "";
-        if (!contentType.includes("multipart/form-data")) {
+        // Enforce max attachments limit (aligned with core MAX_ATTACHMENTS = 10)
+        const MAX_ATTACHMENTS = 10;
+        if (dot.attachments.length >= MAX_ATTACHMENTS) {
           return json(400, {
-            error: "invalid_body",
-            detail: "Expected multipart/form-data",
+            error: "validation_failed",
+            detail: `Dot already has the maximum number of attachments (${MAX_ATTACHMENTS})`,
           });
         }
 
-        const formData = await request.formData();
         const fileEntry = formData.get("file");
 
         if (!fileEntry || typeof fileEntry === "string") {
@@ -903,7 +931,6 @@ export default {
         };
 
         // Size limit: 10MB
-        const maxSize = 10 * 1024 * 1024;
         if (file.size > maxSize) {
           return json(413, {
             error: "file_too_large",
@@ -911,10 +938,30 @@ export default {
           });
         }
 
+        // Validate filename
         if (!file.name || file.name.trim().length === 0) {
           return json(400, {
             error: "invalid_body",
             detail: "Filename is required",
+          });
+        }
+        if (file.name.length > 255) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename exceeds maximum length of 255 characters",
+          });
+        }
+        if (/[\/\\]/.test(file.name)) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename must not contain path separators",
+          });
+        }
+        // eslint-disable-next-line no-control-regex
+        if (/[\x00-\x1f\x7f]/.test(file.name)) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename must not contain control characters",
           });
         }
 
@@ -940,22 +987,32 @@ export default {
         });
 
         // Store metadata in D1 (including R2 storage key for retrieval)
-        await storage.storeAttachmentRef(dotId, {
-          id: attachmentId,
-          filename: file.name,
-          mime_type: file.type || "application/octet-stream",
-          size_bytes: file.size,
-          content_hash: contentHash,
-          storage_key: storageKey,
-          created_at: timestamp,
-        });
+        // On failure, clean up the R2 object to prevent orphans
+        try {
+          await storage.storeAttachmentRef(dotId, {
+            id: attachmentId,
+            filename: file.name,
+            mime_type: file.type || "application/octet-stream",
+            size_bytes: file.size,
+            content_hash: contentHash,
+            storage_key: storageKey,
+            created_at: timestamp,
+          });
+        } catch (metadataErr) {
+          // Best-effort cleanup of orphaned R2 object
+          try {
+            await r2Storage.deleteAttachment(storageKey);
+          } catch {
+            // Swallow cleanup error — the original error is more important
+          }
+          throw metadataErr;
+        }
 
         return json(201, {
           attachment_id: attachmentId,
           filename: file.name,
           mime_type: file.type || "application/octet-stream",
           size_bytes: file.size,
-          storage_key: storageKey,
           content_hash: contentHash,
           created_at: timestamp,
         });
@@ -1055,12 +1112,20 @@ export default {
           });
         }
 
+        // Sanitize filename for Content-Disposition header to prevent injection
+        const safeFilename = attachmentRef.filename
+          .replace(/[\r\n]/g, "") // Strip CRLF
+          .replace(/"/g, '\\"'); // Escape quotes
+        // RFC 5987 encoding for UTF-8 filenames
+        const encodedFilename = encodeURIComponent(attachmentRef.filename)
+          .replace(/'/g, "%27");
+
         return new Response(attachmentData.data, {
           status: 200,
           headers: {
             "content-type": attachmentData.contentType,
             "content-length": String(attachmentData.sizeBytes),
-            "content-disposition": `attachment; filename="${attachmentRef.filename}"`,
+            "content-disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
           },
         });
       } catch (err: unknown) {
