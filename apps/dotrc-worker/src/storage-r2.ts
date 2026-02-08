@@ -132,7 +132,13 @@ export class R2AttachmentStorage implements AttachmentStorage {
    * Delete an attachment file from R2.
    */
   async deleteAttachment(storageKey: string): Promise<void> {
-    await this.bucket.delete(storageKey);
+    try {
+      await this.bucket.delete(storageKey);
+    } catch (err) {
+      throw new Error(`Failed to delete attachment from R2: ${storageKey}`, {
+        cause: err,
+      });
+    }
   }
 
   /**

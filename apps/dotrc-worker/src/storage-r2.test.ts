@@ -106,8 +106,15 @@ describe("R2AttachmentStorage", () => {
         data,
       });
 
-      expect(key).toContain("tenant-1/dot-123/");
-      expect(key).toContain("/test.txt");
+      // Validate full key format: {tenantId}/{dotId}/{uuid}/{filename}
+      const parts = key.split("/");
+      expect(parts).toHaveLength(4);
+      expect(parts[0]).toBe("tenant-1");
+      expect(parts[1]).toBe("dot-123");
+      expect(parts[2]).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+      expect(parts[3]).toBe("test.txt");
       expect(bucket.has(key)).toBe(true);
     });
 
