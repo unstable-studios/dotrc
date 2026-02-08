@@ -793,7 +793,31 @@ export default {
 
         const links = await storage.getLinks(authContext.tenant_id, dotId);
 
-        return json(200, { links });
+        // Filter out links to dots the requester cannot view
+        const visibleLinks = [];
+        for (const link of links) {
+          const otherDotId =
+            link.from_dot_id === dotId ? link.to_dot_id : link.from_dot_id;
+          const otherDot = await storage.getDot(
+            authContext.tenant_id,
+            otherDotId
+          );
+          if (!otherDot) continue;
+          const otherGrants = await storage.getGrants(
+            authContext.tenant_id,
+            otherDotId
+          );
+          const canViewOther =
+            otherDot.created_by === authContext.requesting_user ||
+            otherGrants.some(
+              (g) => g.user_id === authContext.requesting_user
+            );
+          if (canViewOther) {
+            visibleLinks.push(link);
+          }
+        }
+
+        return json(200, { links: visibleLinks });
       } catch (err: unknown) {
         return json(500, {
           error: "internal_error",
