@@ -359,6 +359,88 @@ export class D1DotStorage implements DotStorage {
   }
 
   /**
+   * Store additional visibility grants for an existing dot.
+   * Grants are append-only — never deleted.
+   */
+  async storeGrants(grants: VisibilityGrant[]): Promise<void> {
+    if (grants.length === 0) return;
+
+    const statements: D1PreparedStatement[] = [];
+    for (const grant of grants) {
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO visibility_grants (
+              dot_id, user_id, scope_id, granted_at, granted_by
+            ) VALUES (?, ?, ?, ?, ?)`
+          )
+          .bind(
+            grant.dot_id,
+            grant.user_id || null,
+            grant.scope_id || null,
+            grant.granted_at,
+            grant.granted_by || null
+          )
+      );
+    }
+
+    const results = await this.db.batch(statements);
+    for (const result of results) {
+      if (!result.success) {
+        throw new Error(`D1 batch operation failed: ${result.error}`);
+      }
+    }
+  }
+
+  /**
+   * Store a link between two dots.
+   */
+  async storeLink(link: Link, tenantId: TenantId): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO links (
+          from_dot_id, to_dot_id, link_type, tenant_id, created_at
+        ) VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(
+        link.from_dot_id,
+        link.to_dot_id,
+        link.link_type,
+        tenantId,
+        link.created_at
+      )
+      .run();
+  }
+
+  /**
+   * Retrieve links for a specific dot (both from and to).
+   */
+  async getLinks(tenantId: TenantId, dotId: DotId): Promise<Link[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT from_dot_id, to_dot_id, link_type, created_at
+         FROM links
+         WHERE tenant_id = ? AND (from_dot_id = ? OR to_dot_id = ?)`
+      )
+      .bind(tenantId, dotId, dotId)
+      .all<{
+        from_dot_id: string;
+        to_dot_id: string;
+        link_type: string;
+        created_at: string;
+      }>();
+
+    return (
+      result.results?.map((r) => ({
+        from_dot_id: r.from_dot_id,
+        to_dot_id: r.to_dot_id,
+        link_type: r.link_type as Link["link_type"],
+        created_at: r.created_at,
+      })) || []
+    );
+  }
+
+  /**
    * List dots visible to a user (based on grants).
    * Returns paginated results.
    */
