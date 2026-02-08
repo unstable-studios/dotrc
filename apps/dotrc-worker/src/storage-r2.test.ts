@@ -19,7 +19,9 @@ class MockR2Bucket implements R2Bucket {
     options?: R2PutOptions
   ): Promise<R2Object | null> {
     const data =
-      value instanceof Uint8Array ? value.buffer.slice(0) : (value as ArrayBuffer);
+      value instanceof Uint8Array
+        ? new Uint8Array(value).buffer as ArrayBuffer
+        : (value as ArrayBuffer);
     this.objects.set(key, {
       data,
       metadata: options || {},
