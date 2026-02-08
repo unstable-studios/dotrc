@@ -1192,19 +1192,22 @@ export default {
       }
 
       const storage = new D1DotStorage(env.DB);
-      const results: Array<{
+
+      // Phase 1: Validate all items and build drafts before any writes
+      const validDrafts: Array<{
         index: number;
-        status: "ok" | "error";
-        dot_id?: string;
-        created_at?: string;
-        grants_count?: number;
-        error?: string;
+        draft: DotDraft;
+      }> = [];
+      const validationErrors: Array<{
+        index: number;
+        status: "error";
+        error: string;
       }> = [];
 
       for (let i = 0; i < body.length; i++) {
         const item = body[i];
         if (!item || typeof item !== "object" || Array.isArray(item)) {
-          results.push({
+          validationErrors.push({
             index: i,
             status: "error",
             error: "Expected JSON object",
@@ -1216,7 +1219,7 @@ export default {
         const title =
           typeof payload.title === "string" ? payload.title.trim() : "";
         if (!title) {
-          results.push({
+          validationErrors.push({
             index: i,
             status: "error",
             error: "Missing or empty 'title' field",
@@ -1224,65 +1227,134 @@ export default {
           continue;
         }
 
-        const draft: DotDraft = {
-          title,
-          body: typeof payload.body === "string" ? payload.body : undefined,
-          created_by: authContext.requesting_user,
-          tenant_id: authContext.tenant_id,
-          scope_id:
-            typeof payload.scope_id === "string"
-              ? payload.scope_id
-              : undefined,
-          tags: Array.isArray(payload.tags)
-            ? payload.tags.filter((t): t is string => typeof t === "string")
-            : [],
-          visible_to_users: Array.isArray(payload.visible_to_users)
-            ? payload.visible_to_users.filter(
-                (u): u is string => typeof u === "string"
-              )
-            : [authContext.requesting_user],
-          visible_to_scopes: Array.isArray(payload.visible_to_scopes)
-            ? payload.visible_to_scopes.filter(
-                (s): s is string => typeof s === "string"
-              )
-            : [],
-          attachments: [],
-        };
+        validDrafts.push({
+          index: i,
+          draft: {
+            title,
+            body: typeof payload.body === "string" ? payload.body : undefined,
+            created_by: authContext.requesting_user,
+            tenant_id: authContext.tenant_id,
+            scope_id:
+              typeof payload.scope_id === "string"
+                ? payload.scope_id
+                : undefined,
+            tags: Array.isArray(payload.tags)
+              ? payload.tags.filter((t): t is string => typeof t === "string")
+              : [],
+            visible_to_users: Array.isArray(payload.visible_to_users)
+              ? payload.visible_to_users.filter(
+                  (u): u is string => typeof u === "string"
+                )
+              : [authContext.requesting_user],
+            visible_to_scopes: Array.isArray(payload.visible_to_scopes)
+              ? payload.visible_to_scopes.filter(
+                  (s): s is string => typeof s === "string"
+                )
+              : [],
+            attachments: [],
+          },
+        });
+      }
 
+      // Phase 2: Call core for all valid drafts and collect entities to ensure
+      const coreResults: Array<{
+        index: number;
+        result: ReturnType<typeof core.createDot>;
+        timestamp: string;
+      }> = [];
+      const coreErrors: typeof validationErrors = [];
+      const allUserIds = new Set<string>();
+      const allScopeIds = new Set<string>();
+
+      for (const { index, draft } of validDrafts) {
         try {
           const timestamp = now();
           const dotId = generateDotId();
           const result = core.createDot(draft, timestamp, dotId);
 
-          const storeRequest = {
+          // Collect entities for batch ensure
+          allUserIds.add(result.dot.created_by);
+          if (result.dot.scope_id) allScopeIds.add(result.dot.scope_id);
+          for (const grant of result.grants) {
+            if (grant.user_id) allUserIds.add(grant.user_id);
+            if (grant.scope_id) allScopeIds.add(grant.scope_id);
+            if (grant.granted_by) allUserIds.add(grant.granted_by);
+          }
+
+          coreResults.push({ index, result, timestamp });
+        } catch (err: unknown) {
+          const isClientError =
+            err instanceof DotrcError &&
+            (err.kind === "Validation" || err.kind === "Authorization");
+          coreErrors.push({
+            index,
+            status: "error",
+            error: isClientError
+              ? (err as DotrcError).message
+              : "Failed to create dot",
+          });
+        }
+      }
+
+      // Phase 3: Ensure all entities once (deduplicated across the batch)
+      if (coreResults.length > 0) {
+        const batchTimestamp = now();
+        await storage.ensureTenant(authContext.tenant_id, batchTimestamp);
+        await Promise.all([
+          ...Array.from(allUserIds).map((uid) =>
+            storage.ensureUser(uid, authContext.tenant_id, batchTimestamp)
+          ),
+          ...Array.from(allScopeIds).map((sid) =>
+            storage.ensureScope(sid, authContext.tenant_id, batchTimestamp)
+          ),
+        ]);
+      }
+
+      // Phase 4: Store all dots
+      const storeResults: Array<{
+        index: number;
+        status: "ok" | "error";
+        dot_id?: string;
+        created_at?: string;
+        grants_count?: number;
+        error?: string;
+      }> = [];
+
+      for (const { index, result } of coreResults) {
+        try {
+          await storage.storeDot({
             dot: result.dot,
             grants: result.grants,
             links: result.links,
-          };
-          await storage.ensureEntities(storeRequest, timestamp);
-          await storage.storeDot(storeRequest);
+          });
 
-          results.push({
-            index: i,
+          storeResults.push({
+            index,
             status: "ok",
             dot_id: result.dot.id,
             created_at: result.dot.created_at,
             grants_count: result.grants.length,
           });
         } catch (err: unknown) {
-          results.push({
-            index: i,
+          storeResults.push({
+            index,
             status: "error",
-            error:
-              err instanceof DotrcError
-                ? err.message
-                : "Failed to create dot",
+            error: "Failed to create dot",
           });
         }
       }
 
+      // Merge all results and sort by index
+      const results = [
+        ...validationErrors,
+        ...coreErrors,
+        ...storeResults,
+      ].sort((a, b) => a.index - b.index);
+
+      const anyOk = results.some((r) => r.status === "ok");
       const allOk = results.every((r) => r.status === "ok");
-      return json(allOk ? 201 : 207, { results });
+      const status = allOk ? 201 : anyOk ? 207 : 400;
+      return json(status, { results });
     }
 
     // POST /batch/grants - Grant access to multiple dots in one request
@@ -1349,6 +1421,11 @@ export default {
         error?: string;
       }> = [];
 
+      // Collect all user/scope IDs to ensure once across the batch
+      const allUserIds = new Set<string>();
+      const allScopeIds = new Set<string>();
+
+      // Process each grant request
       for (let i = 0; i < body.length; i++) {
         const item = body[i];
         if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -1387,7 +1464,7 @@ export default {
           results.push({
             index: i,
             status: "error",
-            error: "At least one user_id or scope_id is required",
+            error: "At least one entry in user_ids or scope_ids is required",
           });
           continue;
         }
@@ -1423,21 +1500,10 @@ export default {
             timestamp
           );
 
+          // Collect entities for deduped ensure
           for (const grant of result.grants) {
-            if (grant.user_id) {
-              await storage.ensureUser(
-                grant.user_id,
-                authContext.tenant_id,
-                timestamp
-              );
-            }
-            if (grant.scope_id) {
-              await storage.ensureScope(
-                grant.scope_id,
-                authContext.tenant_id,
-                timestamp
-              );
-            }
+            if (grant.user_id) allUserIds.add(grant.user_id);
+            if (grant.scope_id) allScopeIds.add(grant.scope_id);
           }
 
           await storage.storeGrants(result.grants);
@@ -1449,20 +1515,38 @@ export default {
             grants_count: result.grants.length,
           });
         } catch (err: unknown) {
+          const isClientError =
+            err instanceof DotrcError &&
+            (err.kind === "Validation" || err.kind === "Authorization");
           results.push({
             index: i,
             status: "error",
             dot_id: dotId,
-            error:
-              err instanceof DotrcError
-                ? err.message
-                : "Failed to grant access",
+            error: isClientError
+              ? (err as DotrcError).message
+              : "Failed to grant access",
           });
         }
       }
 
+      // Ensure all referenced users/scopes exist (deduplicated across batch)
+      if (allUserIds.size > 0 || allScopeIds.size > 0) {
+        const batchTimestamp = now();
+        await storage.ensureTenant(authContext.tenant_id, batchTimestamp);
+        await Promise.all([
+          ...Array.from(allUserIds).map((uid) =>
+            storage.ensureUser(uid, authContext.tenant_id, batchTimestamp)
+          ),
+          ...Array.from(allScopeIds).map((sid) =>
+            storage.ensureScope(sid, authContext.tenant_id, batchTimestamp)
+          ),
+        ]);
+      }
+
+      const anyOk = results.some((r) => r.status === "ok");
       const allOk = results.every((r) => r.status === "ok");
-      return json(allOk ? 201 : 207, { results });
+      const status = allOk ? 201 : anyOk ? 207 : 400;
+      return json(status, { results });
     }
 
     return json(404, { error: "not_found", path: url.pathname });
