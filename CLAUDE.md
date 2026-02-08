@@ -22,7 +22,6 @@ make build-wasm     # Build WASM module (./scripts/build-wasm.sh)
 make dev-worker     # Run Cloudflare Worker locally (:8787)
 make dev-web        # Run web UI locally
 make clean          # Clean build artifacts
-pnpm commit         # Commitizen-guided conventional commit
 ```
 
 Prerequisites: Rust stable (with clippy, rustfmt), Node.js 24+, pnpm 9.x, wasm-bindgen-cli (for WASM builds).
@@ -83,7 +82,7 @@ These invariants are enforced across the entire codebase:
 
 ## Commit Convention
 
-Conventional Commits enforced by commitlint + husky pre-commit hook.
+Conventional Commits enforced by commitlint in CI.
 
 Format: `type(scope): subject`
 
