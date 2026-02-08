@@ -96,18 +96,6 @@ class MockD1Database implements D1Database {
         return { success: true, meta: {} };
       },
       async first<T = unknown>(): Promise<T | null> {
-        if (query.includes("SELECT tenant_id FROM users WHERE id")) {
-          const [userId] = bindings;
-          const user = self.data.users.get(userId as string);
-          if (!user) return null;
-          return { tenant_id: user.tenant_id } as T;
-        }
-        if (query.includes("SELECT tenant_id FROM scopes WHERE id")) {
-          const [scopeId] = bindings;
-          const scope = self.data.scopes.get(scopeId as string);
-          if (!scope) return null;
-          return { tenant_id: scope.tenant_id } as T;
-        }
         if (query.includes("SELECT") && query.includes("FROM dots")) {
           const [tenant_id, dot_id] = bindings;
           const dot = self.data.dots.get(dot_id as string);
@@ -491,50 +479,30 @@ describe("D1DotStorage", () => {
   });
 
   describe("ensureUser", () => {
-    it("creates a user", async () => {
-      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+    it("creates a user and its tenant", async () => {
       await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
       expect(db.getUsers().has("user-1")).toBe(true);
+      expect(db.getTenants().has("tenant-1")).toBe(true);
     });
 
     it("is idempotent — no error on duplicate", async () => {
-      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
       await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
       await storage.ensureUser("user-1", "tenant-1", "2025-12-22T01:00:00Z");
       expect(db.getUsers().get("user-1").created_at).toBe("2025-12-22T00:00:00Z");
     });
-
-    it("throws on cross-tenant user ID collision", async () => {
-      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
-      await storage.ensureTenant("tenant-2", "2025-12-22T00:00:00Z");
-      await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
-      await expect(
-        storage.ensureUser("user-1", "tenant-2", "2025-12-22T00:00:00Z")
-      ).rejects.toThrow("User user-1 belongs to tenant tenant-1, not tenant-2");
-    });
   });
 
   describe("ensureScope", () => {
-    it("creates a scope", async () => {
-      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+    it("creates a scope and its tenant", async () => {
       await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
       expect(db.getScopes().has("scope-1")).toBe(true);
+      expect(db.getTenants().has("tenant-1")).toBe(true);
     });
 
     it("is idempotent — no error on duplicate", async () => {
-      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
       await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
       await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T01:00:00Z");
       expect(db.getScopes().get("scope-1").created_at).toBe("2025-12-22T00:00:00Z");
-    });
-
-    it("throws on cross-tenant scope ID collision", async () => {
-      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
-      await storage.ensureTenant("tenant-2", "2025-12-22T00:00:00Z");
-      await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
-      await expect(
-        storage.ensureScope("scope-1", "tenant-2", "2025-12-22T00:00:00Z")
-      ).rejects.toThrow("Scope scope-1 belongs to tenant tenant-1, not tenant-2");
     });
   });
 
