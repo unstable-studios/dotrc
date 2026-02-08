@@ -11,24 +11,11 @@
   "scripts": {
     "lint": "pnpm lint:rust",
     "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings",
-    "commit": "cz",
-    "commitlint": "commitlint --edit",
     "dev:worker": "pnpm --filter dotrc-worker dev",
     "dev:web": "pnpm --filter dotrc-web dev",
     "build:core": "echo \"TODO: build wasm core\" && exit 0"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.2.0",
-    "@commitlint/config-conventional": "^20.2.0",
-    "@commitlint/cz-commitlint": "^20.2.0",
-    "@commitlint/prompt": "^20.2.0",
-    "@commitlint/prompt-cli": "^20.2.0",
-    "commitizen": "^4.3.1",
     "husky": "^9.1.7"
-  },
-  "config": {
-    "commitizen": {
-      "path": "@commitlint/cz-commitlint"
-    }
   }
 }

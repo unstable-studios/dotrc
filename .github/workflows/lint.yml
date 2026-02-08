@@ -48,5 +48,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check formatting
-        run: pnpm --filter dotrc-worker run format:check
+      - name: Type check
+        run: pnpm --filter dotrc-worker run typecheck
