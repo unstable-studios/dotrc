@@ -26,6 +26,7 @@ export interface AttachmentRef {
   mime_type: string;
   size_bytes: number;
   content_hash: string;
+  storage_key?: string;
   created_at: Timestamp;
 }
 

@@ -2,7 +2,7 @@ import { DotrcCore } from "./core";
 import type { DotrcWasm } from "./core";
 import type { DotDraft, AuthContext, LinkType } from "./types";
 import { DotrcError } from "./types";
-import { generateDotId, now } from "./utils";
+import { generateDotId, generateAttachmentId, now } from "./utils";
 import {
   resolveAuthContext,
   JWTProvider,
@@ -33,7 +33,7 @@ export type JsonArray = JsonValue[];
 export type JsonSerializable = JsonValue | { [key: string]: any } | any[];
 
 import { D1DotStorage, type D1Database } from "./storage-d1";
-import { type R2Bucket } from "./storage-r2";
+import { R2AttachmentStorage, type R2Bucket } from "./storage-r2";
 
 interface Env {
   // D1 database binding for persistence
@@ -822,6 +822,251 @@ export default {
         return json(500, {
           error: "internal_error",
           detail: "Failed to retrieve links",
+        });
+      }
+    }
+
+    // POST /dots/:dotId/attachments - Upload an attachment
+    if (
+      request.method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "dots" &&
+      segments[2] === "attachments"
+    ) {
+      const dotId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      if (!env.ATTACHMENTS) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Attachment storage not configured",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const dot = await storage.getDot(authContext.tenant_id, dotId);
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Dot not found",
+          });
+        }
+
+        // Only the creator can add attachments
+        if (dot.created_by !== authContext.requesting_user) {
+          return json(403, {
+            error: "forbidden",
+            detail: "Only the dot creator can add attachments",
+          });
+        }
+
+        // Parse multipart form data
+        const contentType = request.headers.get("content-type") || "";
+        if (!contentType.includes("multipart/form-data")) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Expected multipart/form-data",
+          });
+        }
+
+        const formData = await request.formData();
+        const fileEntry = formData.get("file");
+
+        if (!fileEntry || typeof fileEntry === "string") {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Missing 'file' field in form data",
+          });
+        }
+
+        const file = fileEntry as unknown as {
+          name: string;
+          type: string;
+          size: number;
+          arrayBuffer(): Promise<ArrayBuffer>;
+        };
+
+        // Size limit: 10MB
+        const maxSize = 10 * 1024 * 1024;
+        if (file.size > maxSize) {
+          return json(413, {
+            error: "file_too_large",
+            detail: `File exceeds maximum size of ${maxSize} bytes`,
+          });
+        }
+
+        if (!file.name || file.name.trim().length === 0) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename is required",
+          });
+        }
+
+        const timestamp = now();
+        const attachmentId = generateAttachmentId();
+        const fileData = new Uint8Array(await file.arrayBuffer());
+
+        // Compute content hash
+        const hashBuffer = await crypto.subtle.digest("SHA-256", fileData);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const contentHash =
+          "sha256:" +
+          hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+        // Upload to R2
+        const r2Storage = new R2AttachmentStorage(env.ATTACHMENTS);
+        const storageKey = await r2Storage.uploadAttachment({
+          tenantId: authContext.tenant_id,
+          dotId,
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          data: fileData,
+        });
+
+        // Store metadata in D1 (including R2 storage key for retrieval)
+        await storage.storeAttachmentRef(dotId, {
+          id: attachmentId,
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size,
+          content_hash: contentHash,
+          storage_key: storageKey,
+          created_at: timestamp,
+        });
+
+        return json(201, {
+          attachment_id: attachmentId,
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size,
+          storage_key: storageKey,
+          content_hash: contentHash,
+          created_at: timestamp,
+        });
+      } catch (err: unknown) {
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to upload attachment",
+        });
+      }
+    }
+
+    // GET /attachments/:attachmentId - Download an attachment
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "attachments"
+    ) {
+      const attachmentId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      if (!env.ATTACHMENTS) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Attachment storage not configured",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const attachmentRef = await storage.getAttachmentRef(attachmentId);
+
+        if (!attachmentRef) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment not found",
+          });
+        }
+
+        // Check if user can view the parent dot
+        const dot = await storage.getDot(
+          authContext.tenant_id,
+          attachmentRef.dot_id
+        );
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment not found",
+          });
+        }
+
+        const grants = await storage.getGrants(
+          authContext.tenant_id,
+          attachmentRef.dot_id
+        );
+        const canView =
+          dot.created_by === authContext.requesting_user ||
+          grants.some((g) => g.user_id === authContext.requesting_user);
+
+        if (!canView) {
+          return json(403, {
+            error: "forbidden",
+            detail: "You do not have permission to view this attachment",
+          });
+        }
+
+        if (!attachmentRef.storage_key) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment storage key not available",
+          });
+        }
+
+        const r2Storage = new R2AttachmentStorage(env.ATTACHMENTS);
+        const attachmentData = await r2Storage.getAttachment(
+          attachmentRef.storage_key
+        );
+
+        if (!attachmentData) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment file not found in storage",
+          });
+        }
+
+        return new Response(attachmentData.data, {
+          status: 200,
+          headers: {
+            "content-type": attachmentData.contentType,
+            "content-length": String(attachmentData.sizeBytes),
+            "content-disposition": `attachment; filename="${attachmentRef.filename}"`,
+          },
+        });
+      } catch (err: unknown) {
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to retrieve attachment",
         });
       }
     }
