@@ -20,6 +20,7 @@ import type {
   TenantId,
   DotId,
   UserId,
+  ScopeId,
 } from "./types";
 
 /**
@@ -59,6 +60,87 @@ export interface D1ExecResult {
  */
 export class D1DotStorage implements DotStorage {
   constructor(private db: D1Database) {}
+
+  /**
+   * Ensure a tenant exists, creating it idempotently if not.
+   * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
+   */
+  async ensureTenant(tenantId: TenantId, now: string): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT OR IGNORE INTO tenants (id, name, created_at) VALUES (?, ?, ?)`
+      )
+      .bind(tenantId, tenantId, now)
+      .run();
+  }
+
+  /**
+   * Ensure a user exists within a tenant, creating it idempotently if not.
+   * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
+   */
+  async ensureUser(
+    userId: UserId,
+    tenantId: TenantId,
+    now: string
+  ): Promise<void> {
+    await this.ensureTenant(tenantId, now);
+    await this.db
+      .prepare(
+        `INSERT OR IGNORE INTO users (id, tenant_id, display_name, created_at) VALUES (?, ?, ?, ?)`
+      )
+      .bind(userId, tenantId, userId, now)
+      .run();
+  }
+
+  /**
+   * Ensure a scope exists within a tenant, creating it idempotently if not.
+   * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
+   */
+  async ensureScope(
+    scopeId: ScopeId,
+    tenantId: TenantId,
+    now: string
+  ): Promise<void> {
+    await this.ensureTenant(tenantId, now);
+    await this.db
+      .prepare(
+        `INSERT OR IGNORE INTO scopes (id, tenant_id, name, type, created_at) VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(scopeId, tenantId, scopeId, "auto", now)
+      .run();
+  }
+
+  /**
+   * Ensure all referenced users and scopes exist before storing a dot.
+   * This implements lazy creation: entities are auto-created on first reference.
+   */
+  async ensureEntities(request: StoreDotRequest, now: string): Promise<void> {
+    const { dot, grants } = request;
+
+    // Ensure tenant exists
+    await this.ensureTenant(dot.tenant_id, now);
+
+    // Ensure the creator user exists
+    await this.ensureUser(dot.created_by, dot.tenant_id, now);
+
+    // Ensure scope exists if specified
+    if (dot.scope_id) {
+      await this.ensureScope(dot.scope_id, dot.tenant_id, now);
+    }
+
+    // Ensure all granted users and scopes exist
+    for (const grant of grants) {
+      if (grant.user_id) {
+        await this.ensureUser(grant.user_id, dot.tenant_id, now);
+      }
+      if (grant.scope_id) {
+        await this.ensureScope(grant.scope_id, dot.tenant_id, now);
+      }
+      if (grant.granted_by) {
+        await this.ensureUser(grant.granted_by, dot.tenant_id, now);
+      }
+    }
+  }
 
   /**
    * Store a dot with its grants and links atomically using D1 batch.
