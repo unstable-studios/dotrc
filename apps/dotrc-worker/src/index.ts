@@ -1136,6 +1136,419 @@ export default {
       }
     }
 
+    // POST /batch/dots - Create multiple dots in one request
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "batch" &&
+      segments[1] === "dots"
+    ) {
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      let body: JsonValue;
+      try {
+        body = await readJson(request);
+      } catch (err) {
+        return json(400, {
+          error: "invalid_json",
+          detail: (err as Error).message,
+        });
+      }
+
+      if (!body || !Array.isArray(body)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected JSON array of dot drafts",
+        });
+      }
+
+      // Rate limit: max 50 dots per batch
+      const maxBatchSize = 50;
+      if (body.length > maxBatchSize) {
+        return json(400, {
+          error: "invalid_body",
+          detail: `Batch size exceeds maximum of ${maxBatchSize}`,
+        });
+      }
+
+      if (body.length === 0) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Batch must contain at least one dot draft",
+        });
+      }
+
+      const storage = new D1DotStorage(env.DB);
+
+      // Phase 1: Validate all items and build drafts before any writes
+      const validDrafts: Array<{
+        index: number;
+        draft: DotDraft;
+      }> = [];
+      const validationErrors: Array<{
+        index: number;
+        status: "error";
+        error: string;
+      }> = [];
+
+      for (let i = 0; i < body.length; i++) {
+        const item = body[i];
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          validationErrors.push({
+            index: i,
+            status: "error",
+            error: "Expected JSON object",
+          });
+          continue;
+        }
+
+        const payload = item as Record<string, JsonValue>;
+        const title =
+          typeof payload.title === "string" ? payload.title.trim() : "";
+        if (!title) {
+          validationErrors.push({
+            index: i,
+            status: "error",
+            error: "Missing or empty 'title' field",
+          });
+          continue;
+        }
+
+        validDrafts.push({
+          index: i,
+          draft: {
+            title,
+            body: typeof payload.body === "string" ? payload.body : undefined,
+            created_by: authContext.requesting_user,
+            tenant_id: authContext.tenant_id,
+            scope_id:
+              typeof payload.scope_id === "string"
+                ? payload.scope_id
+                : undefined,
+            tags: Array.isArray(payload.tags)
+              ? payload.tags.filter((t): t is string => typeof t === "string")
+              : [],
+            visible_to_users: Array.isArray(payload.visible_to_users)
+              ? payload.visible_to_users.filter(
+                  (u): u is string => typeof u === "string"
+                )
+              : [authContext.requesting_user],
+            visible_to_scopes: Array.isArray(payload.visible_to_scopes)
+              ? payload.visible_to_scopes.filter(
+                  (s): s is string => typeof s === "string"
+                )
+              : [],
+            attachments: [],
+          },
+        });
+      }
+
+      // Phase 2: Call core for all valid drafts and collect entities to ensure
+      const coreResults: Array<{
+        index: number;
+        result: ReturnType<typeof core.createDot>;
+        timestamp: string;
+      }> = [];
+      const coreErrors: typeof validationErrors = [];
+      const allUserIds = new Set<string>();
+      const allScopeIds = new Set<string>();
+
+      for (const { index, draft } of validDrafts) {
+        try {
+          const timestamp = now();
+          const dotId = generateDotId();
+          const result = core.createDot(draft, timestamp, dotId);
+
+          // Collect entities for batch ensure
+          allUserIds.add(result.dot.created_by);
+          if (result.dot.scope_id) allScopeIds.add(result.dot.scope_id);
+          for (const grant of result.grants) {
+            if (grant.user_id) allUserIds.add(grant.user_id);
+            if (grant.scope_id) allScopeIds.add(grant.scope_id);
+            if (grant.granted_by) allUserIds.add(grant.granted_by);
+          }
+
+          coreResults.push({ index, result, timestamp });
+        } catch (err: unknown) {
+          const isClientError =
+            err instanceof DotrcError &&
+            (err.kind === "Validation" || err.kind === "Authorization");
+          coreErrors.push({
+            index,
+            status: "error",
+            error: isClientError
+              ? (err as DotrcError).message
+              : "Failed to create dot",
+          });
+        }
+      }
+
+      // Phase 3: Ensure all entities once (deduplicated across the batch)
+      if (coreResults.length > 0) {
+        const batchTimestamp = now();
+        await storage.ensureTenant(authContext.tenant_id, batchTimestamp);
+        await Promise.all([
+          ...Array.from(allUserIds).map((uid) =>
+            storage.ensureUser(uid, authContext.tenant_id, batchTimestamp)
+          ),
+          ...Array.from(allScopeIds).map((sid) =>
+            storage.ensureScope(sid, authContext.tenant_id, batchTimestamp)
+          ),
+        ]);
+      }
+
+      // Phase 4: Store all dots
+      const storeResults: Array<{
+        index: number;
+        status: "ok" | "error";
+        dot_id?: string;
+        created_at?: string;
+        grants_count?: number;
+        error?: string;
+      }> = [];
+
+      for (const { index, result } of coreResults) {
+        try {
+          await storage.storeDot({
+            dot: result.dot,
+            grants: result.grants,
+            links: result.links,
+          });
+
+          storeResults.push({
+            index,
+            status: "ok",
+            dot_id: result.dot.id,
+            created_at: result.dot.created_at,
+            grants_count: result.grants.length,
+          });
+        } catch (err: unknown) {
+          storeResults.push({
+            index,
+            status: "error",
+            error: "Failed to create dot",
+          });
+        }
+      }
+
+      // Merge all results and sort by index
+      const results = [
+        ...validationErrors,
+        ...coreErrors,
+        ...storeResults,
+      ].sort((a, b) => a.index - b.index);
+
+      const anyOk = results.some((r) => r.status === "ok");
+      const allOk = results.every((r) => r.status === "ok");
+      const status = allOk ? 201 : anyOk ? 207 : 400;
+      return json(status, { results });
+    }
+
+    // POST /batch/grants - Grant access to multiple dots in one request
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "batch" &&
+      segments[1] === "grants"
+    ) {
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      let body: JsonValue;
+      try {
+        body = await readJson(request);
+      } catch (err) {
+        return json(400, {
+          error: "invalid_json",
+          detail: (err as Error).message,
+        });
+      }
+
+      if (!body || !Array.isArray(body)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected JSON array of grant requests",
+        });
+      }
+
+      // Rate limit: max 50 grant operations per batch
+      const maxBatchSize = 50;
+      if (body.length > maxBatchSize) {
+        return json(400, {
+          error: "invalid_body",
+          detail: `Batch size exceeds maximum of ${maxBatchSize}`,
+        });
+      }
+
+      if (body.length === 0) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Batch must contain at least one grant request",
+        });
+      }
+
+      const storage = new D1DotStorage(env.DB);
+      const results: Array<{
+        index: number;
+        status: "ok" | "error";
+        dot_id?: string;
+        grants_count?: number;
+        error?: string;
+      }> = [];
+
+      // Collect all user/scope IDs to ensure once across the batch
+      const allUserIds = new Set<string>();
+      const allScopeIds = new Set<string>();
+
+      // Process each grant request
+      for (let i = 0; i < body.length; i++) {
+        const item = body[i];
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          results.push({
+            index: i,
+            status: "error",
+            error: "Expected JSON object",
+          });
+          continue;
+        }
+
+        const payload = item as Record<string, JsonValue>;
+        const dotId =
+          typeof payload.dot_id === "string" ? payload.dot_id : "";
+        const userIds = Array.isArray(payload.user_ids)
+          ? payload.user_ids.filter(
+              (u): u is string => typeof u === "string"
+            )
+          : [];
+        const scopeIds = Array.isArray(payload.scope_ids)
+          ? payload.scope_ids.filter(
+              (s): s is string => typeof s === "string"
+            )
+          : [];
+
+        if (!dotId) {
+          results.push({
+            index: i,
+            status: "error",
+            error: "Missing 'dot_id' field",
+          });
+          continue;
+        }
+
+        if (userIds.length === 0 && scopeIds.length === 0) {
+          results.push({
+            index: i,
+            status: "error",
+            error: "At least one entry in user_ids or scope_ids is required",
+          });
+          continue;
+        }
+
+        try {
+          const dot = await storage.getDot(authContext.tenant_id, dotId);
+          if (!dot) {
+            results.push({
+              index: i,
+              status: "error",
+              dot_id: dotId,
+              error: "Dot not found",
+            });
+            continue;
+          }
+
+          const existingGrants = await storage.getGrants(
+            authContext.tenant_id,
+            dotId
+          );
+
+          const timestamp = now();
+          const result = core.grantAccess(
+            dot,
+            existingGrants,
+            userIds,
+            scopeIds,
+            {
+              requesting_user: authContext.requesting_user,
+              user_scope_memberships:
+                authContext.user_scope_memberships || [],
+            },
+            timestamp
+          );
+
+          // Collect entities for deduped ensure
+          for (const grant of result.grants) {
+            if (grant.user_id) allUserIds.add(grant.user_id);
+            if (grant.scope_id) allScopeIds.add(grant.scope_id);
+          }
+
+          await storage.storeGrants(result.grants);
+
+          results.push({
+            index: i,
+            status: "ok",
+            dot_id: dotId,
+            grants_count: result.grants.length,
+          });
+        } catch (err: unknown) {
+          const isClientError =
+            err instanceof DotrcError &&
+            (err.kind === "Validation" || err.kind === "Authorization");
+          results.push({
+            index: i,
+            status: "error",
+            dot_id: dotId,
+            error: isClientError
+              ? (err as DotrcError).message
+              : "Failed to grant access",
+          });
+        }
+      }
+
+      // Ensure all referenced users/scopes exist (deduplicated across batch)
+      if (allUserIds.size > 0 || allScopeIds.size > 0) {
+        const batchTimestamp = now();
+        await storage.ensureTenant(authContext.tenant_id, batchTimestamp);
+        await Promise.all([
+          ...Array.from(allUserIds).map((uid) =>
+            storage.ensureUser(uid, authContext.tenant_id, batchTimestamp)
+          ),
+          ...Array.from(allScopeIds).map((sid) =>
+            storage.ensureScope(sid, authContext.tenant_id, batchTimestamp)
+          ),
+        ]);
+      }
+
+      const anyOk = results.some((r) => r.status === "ok");
+      const allOk = results.every((r) => r.status === "ok");
+      const status = allOk ? 201 : anyOk ? 207 : 400;
+      return json(status, { results });
+    }
+
     return json(404, { error: "not_found", path: url.pathname });
   },
 };
