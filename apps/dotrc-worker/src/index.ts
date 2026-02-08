@@ -1,6 +1,6 @@
 import { DotrcCore } from "./core";
 import type { DotrcWasm } from "./core";
-import type { DotDraft, AuthContext } from "./types";
+import type { DotDraft, AuthContext, LinkType } from "./types";
 import { DotrcError } from "./types";
 import { generateDotId, now } from "./utils";
 import {
@@ -583,6 +583,221 @@ export default {
         return json(500, {
           error: "internal_error",
           detail: "Failed to retrieve grants",
+        });
+      }
+    }
+
+    // POST /dots/:dotId/links - Create a link between dots
+    if (
+      request.method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "dots" &&
+      segments[2] === "links"
+    ) {
+      const fromDotId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      let body: JsonValue;
+      try {
+        body = await readJson(request);
+      } catch (err) {
+        return json(400, {
+          error: "invalid_json",
+          detail: (err as Error).message,
+        });
+      }
+
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected JSON object",
+        });
+      }
+
+      const payload = body as Record<string, JsonValue>;
+      const toDotId =
+        typeof payload.to_dot_id === "string" ? payload.to_dot_id : "";
+      const linkType =
+        typeof payload.link_type === "string" ? payload.link_type : "";
+
+      if (!toDotId) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Missing 'to_dot_id' field",
+        });
+      }
+
+      const validLinkTypes: LinkType[] = [
+        "followup",
+        "corrects",
+        "supersedes",
+        "related",
+      ];
+      if (!validLinkTypes.includes(linkType as LinkType)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: `Invalid link_type '${linkType}'. Must be one of: ${validLinkTypes.join(", ")}`,
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const fromDot = await storage.getDot(
+          authContext.tenant_id,
+          fromDotId
+        );
+
+        if (!fromDot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Source dot not found",
+          });
+        }
+
+        const toDot = await storage.getDot(authContext.tenant_id, toDotId);
+
+        if (!toDot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Target dot not found",
+          });
+        }
+
+        const fromGrants = await storage.getGrants(
+          authContext.tenant_id,
+          fromDotId
+        );
+        const toGrants = await storage.getGrants(
+          authContext.tenant_id,
+          toDotId
+        );
+        const existingLinks = await storage.getLinks(
+          authContext.tenant_id,
+          fromDotId
+        );
+
+        const timestamp = now();
+        const result = core.createLink(
+          fromDot,
+          toDot,
+          linkType as LinkType,
+          { from: fromGrants, to: toGrants },
+          existingLinks,
+          {
+            requesting_user: authContext.requesting_user,
+            user_scope_memberships:
+              authContext.user_scope_memberships || [],
+          },
+          timestamp
+        );
+
+        await storage.storeLink(result.link, authContext.tenant_id);
+
+        return json(201, { link: result.link });
+      } catch (err: unknown) {
+        if (err instanceof DotrcError) {
+          const status =
+            err.kind === "Validation"
+              ? 400
+              : err.kind === "Authorization"
+              ? 403
+              : err.kind === "Link"
+              ? 409
+              : 500;
+
+          return json(status, {
+            error:
+              status === 400
+                ? "validation_failed"
+                : status === 403
+                ? "forbidden"
+                : status === 409
+                ? "link_error"
+                : "internal_error",
+            kind: err.kind,
+            detail:
+              status < 500
+                ? err.message
+                : "Request processing failed",
+          });
+        }
+
+        return json(500, {
+          error: "internal_error",
+          detail: "Request processing failed",
+        });
+      }
+    }
+
+    // GET /dots/:dotId/links - List links for a dot
+    if (
+      request.method === "GET" &&
+      segments.length === 3 &&
+      segments[0] === "dots" &&
+      segments[2] === "links"
+    ) {
+      const dotId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const dot = await storage.getDot(authContext.tenant_id, dotId);
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Dot not found",
+          });
+        }
+
+        // Check if user can view this dot
+        const grants = await storage.getGrants(authContext.tenant_id, dotId);
+        const canView =
+          dot.created_by === authContext.requesting_user ||
+          grants.some((g) => g.user_id === authContext.requesting_user);
+
+        if (!canView) {
+          return json(403, {
+            error: "forbidden",
+            detail: "You do not have permission to view this dot",
+          });
+        }
+
+        const links = await storage.getLinks(authContext.tenant_id, dotId);
+
+        return json(200, { links });
+      } catch (err: unknown) {
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to retrieve links",
         });
       }
     }
