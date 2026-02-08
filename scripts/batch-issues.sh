@@ -40,7 +40,7 @@ When finished, print a summary table of:
 - Issue number
 - PR URL (or 'skipped' with reason)
 - Branch name
-" --output-format stream-json 2>&1 | tee -a "$LOG_FILE"
+" --verbose --output-format stream-json 2>&1 | tee -a "$LOG_FILE"
 
 echo "" | tee -a "$LOG_FILE"
 echo "Batch complete at $(date)" | tee -a "$LOG_FILE"
