@@ -66,12 +66,15 @@ export class D1DotStorage implements DotStorage {
    * Uses INSERT OR IGNORE for idempotency — no error on duplicate.
    */
   async ensureTenant(tenantId: TenantId, now: string): Promise<void> {
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO tenants (id, name, created_at) VALUES (?, ?, ?)`
       )
       .bind(tenantId, tenantId, now)
       .run();
+    if (!result.success) {
+      throw new Error(`Failed to ensure tenant ${tenantId}: ${result.error}`);
+    }
   }
 
   /**
@@ -84,12 +87,26 @@ export class D1DotStorage implements DotStorage {
     now: string
   ): Promise<void> {
     await this.ensureTenant(tenantId, now);
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO users (id, tenant_id, display_name, created_at) VALUES (?, ?, ?, ?)`
       )
       .bind(userId, tenantId, userId, now)
       .run();
+    if (!result.success) {
+      throw new Error(`Failed to ensure user ${userId}: ${result.error}`);
+    }
+    // Verify tenant isolation: users.id is a global PK, so INSERT OR IGNORE
+    // silently keeps the first tenant association. Reject cross-tenant reuse.
+    const existing = await this.db
+      .prepare(`SELECT tenant_id FROM users WHERE id = ?`)
+      .bind(userId)
+      .first<{ tenant_id: string }>();
+    if (existing && existing.tenant_id !== tenantId) {
+      throw new Error(
+        `User ${userId} belongs to tenant ${existing.tenant_id}, not ${tenantId}`
+      );
+    }
   }
 
   /**
@@ -102,12 +119,26 @@ export class D1DotStorage implements DotStorage {
     now: string
   ): Promise<void> {
     await this.ensureTenant(tenantId, now);
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO scopes (id, tenant_id, name, type, created_at) VALUES (?, ?, ?, ?, ?)`
       )
       .bind(scopeId, tenantId, scopeId, "auto", now)
       .run();
+    if (!result.success) {
+      throw new Error(`Failed to ensure scope ${scopeId}: ${result.error}`);
+    }
+    // Verify tenant isolation: scopes.id is a global PK, so INSERT OR IGNORE
+    // silently keeps the first tenant association. Reject cross-tenant reuse.
+    const existing = await this.db
+      .prepare(`SELECT tenant_id FROM scopes WHERE id = ?`)
+      .bind(scopeId)
+      .first<{ tenant_id: string }>();
+    if (existing && existing.tenant_id !== tenantId) {
+      throw new Error(
+        `Scope ${scopeId} belongs to tenant ${existing.tenant_id}, not ${tenantId}`
+      );
+    }
   }
 
   /**
@@ -117,29 +148,33 @@ export class D1DotStorage implements DotStorage {
   async ensureEntities(request: StoreDotRequest, now: string): Promise<void> {
     const { dot, grants } = request;
 
-    // Ensure tenant exists
+    // Ensure tenant exists first (other ensures depend on it)
     await this.ensureTenant(dot.tenant_id, now);
 
-    // Ensure the creator user exists
-    await this.ensureUser(dot.created_by, dot.tenant_id, now);
+    // Collect and deduplicate all user/scope IDs
+    const userIds = new Set<string>();
+    const scopeIds = new Set<string>();
 
-    // Ensure scope exists if specified
+    userIds.add(dot.created_by);
     if (dot.scope_id) {
-      await this.ensureScope(dot.scope_id, dot.tenant_id, now);
+      scopeIds.add(dot.scope_id);
     }
 
-    // Ensure all granted users and scopes exist
     for (const grant of grants) {
-      if (grant.user_id) {
-        await this.ensureUser(grant.user_id, dot.tenant_id, now);
-      }
-      if (grant.scope_id) {
-        await this.ensureScope(grant.scope_id, dot.tenant_id, now);
-      }
-      if (grant.granted_by) {
-        await this.ensureUser(grant.granted_by, dot.tenant_id, now);
-      }
+      if (grant.user_id) userIds.add(grant.user_id);
+      if (grant.scope_id) scopeIds.add(grant.scope_id);
+      if (grant.granted_by) userIds.add(grant.granted_by);
     }
+
+    // Ensure all users and scopes in parallel (tenant already ensured above)
+    await Promise.all([
+      ...Array.from(userIds).map((uid) =>
+        this.ensureUser(uid, dot.tenant_id, now)
+      ),
+      ...Array.from(scopeIds).map((sid) =>
+        this.ensureScope(sid, dot.tenant_id, now)
+      ),
+    ]);
   }
 
   /**
@@ -354,6 +389,95 @@ export class D1DotStorage implements DotStorage {
         scope_id: r.scope_id || undefined,
         granted_at: r.granted_at,
         granted_by: r.granted_by || undefined,
+      })) || []
+    );
+  }
+
+  /**
+   * Store additional visibility grants for an existing dot.
+   * Grants are append-only — never deleted.
+   */
+  async storeGrants(grants: VisibilityGrant[]): Promise<void> {
+    if (grants.length === 0) return;
+
+    const statements: D1PreparedStatement[] = [];
+    for (const grant of grants) {
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO visibility_grants (
+              dot_id, user_id, scope_id, granted_at, granted_by
+            ) VALUES (?, ?, ?, ?, ?)`
+          )
+          .bind(
+            grant.dot_id,
+            grant.user_id || null,
+            grant.scope_id || null,
+            grant.granted_at,
+            grant.granted_by || null
+          )
+      );
+    }
+
+    const results = await this.db.batch(statements);
+    for (const result of results) {
+      if (!result.success) {
+        throw new Error(`D1 batch operation failed: ${result.error}`);
+      }
+    }
+  }
+
+  /**
+   * Store a link between two dots.
+   */
+  async storeLink(link: Link, tenantId: TenantId): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO links (
+          from_dot_id, to_dot_id, link_type, tenant_id, created_at
+        ) VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(
+        link.from_dot_id,
+        link.to_dot_id,
+        link.link_type,
+        tenantId,
+        link.created_at
+      )
+      .run();
+    if (!result.success) {
+      throw new Error(`Failed to store link: ${result.error}`);
+    }
+  }
+
+  /**
+   * Retrieve links for a specific dot (both from and to).
+   */
+  async getLinks(tenantId: TenantId, dotId: DotId): Promise<Link[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT from_dot_id, to_dot_id, link_type, created_at
+         FROM links
+         WHERE tenant_id = ? AND (from_dot_id = ? OR to_dot_id = ?)`
+      )
+      .bind(tenantId, dotId, dotId)
+      .all<{
+        from_dot_id: string;
+        to_dot_id: string;
+        link_type: string;
+        created_at: string;
+      }>();
+
+    if (!result.success) {
+      throw new Error(`Failed to get links for dot ${dotId}: ${result.error}`);
+    }
+
+    return (
+      result.results?.map((r) => ({
+        from_dot_id: r.from_dot_id,
+        to_dot_id: r.to_dot_id,
+        link_type: r.link_type as Link["link_type"],
+        created_at: r.created_at,
       })) || []
     );
   }

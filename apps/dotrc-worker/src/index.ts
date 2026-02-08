@@ -388,6 +388,205 @@ export default {
       }
     }
 
+    // POST /dots/:dotId/grants - Grant access to an existing dot
+    if (
+      request.method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "dots" &&
+      segments[2] === "grants"
+    ) {
+      const dotId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      let body: JsonValue;
+      try {
+        body = await readJson(request);
+      } catch (err) {
+        return json(400, {
+          error: "invalid_json",
+          detail: (err as Error).message,
+        });
+      }
+
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected JSON object",
+        });
+      }
+
+      const payload = body as Record<string, JsonValue>;
+      const userIds = Array.isArray(payload.user_ids)
+        ? payload.user_ids.filter((u): u is string => typeof u === "string")
+        : [];
+      const scopeIds = Array.isArray(payload.scope_ids)
+        ? payload.scope_ids.filter((s): s is string => typeof s === "string")
+        : [];
+
+      if (userIds.length === 0 && scopeIds.length === 0) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "At least one entry in user_ids or scope_ids is required",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const dot = await storage.getDot(authContext.tenant_id, dotId);
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Dot not found",
+          });
+        }
+
+        const existingGrants = await storage.getGrants(
+          authContext.tenant_id,
+          dotId
+        );
+
+        const timestamp = now();
+        const result = core.grantAccess(
+          dot,
+          existingGrants,
+          userIds,
+          scopeIds,
+          {
+            requesting_user: authContext.requesting_user,
+            user_scope_memberships:
+              authContext.user_scope_memberships || [],
+          },
+          timestamp
+        );
+
+        // Ensure all new grantee users/scopes exist
+        for (const grant of result.grants) {
+          if (grant.user_id) {
+            await storage.ensureUser(
+              grant.user_id,
+              authContext.tenant_id,
+              timestamp
+            );
+          }
+          if (grant.scope_id) {
+            await storage.ensureScope(
+              grant.scope_id,
+              authContext.tenant_id,
+              timestamp
+            );
+          }
+        }
+
+        await storage.storeGrants(result.grants);
+
+        return json(201, {
+          grants: result.grants,
+          grants_count: result.grants.length,
+        });
+      } catch (err: unknown) {
+        if (err instanceof DotrcError) {
+          const status =
+            err.kind === "Validation"
+              ? 400
+              : err.kind === "Authorization"
+              ? 403
+              : 500;
+
+          return json(status, {
+            error:
+              status === 400
+                ? "validation_failed"
+                : status === 403
+                ? "forbidden"
+                : "internal_error",
+            kind: err.kind,
+            detail:
+              status < 500
+                ? err.message
+                : "Request processing failed",
+          });
+        }
+
+        return json(500, {
+          error: "internal_error",
+          detail: "Request processing failed",
+        });
+      }
+    }
+
+    // GET /dots/:dotId/grants - List grants for a dot
+    if (
+      request.method === "GET" &&
+      segments.length === 3 &&
+      segments[0] === "dots" &&
+      segments[2] === "grants"
+    ) {
+      const dotId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const dot = await storage.getDot(authContext.tenant_id, dotId);
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Dot not found",
+          });
+        }
+
+        const grants = await storage.getGrants(authContext.tenant_id, dotId);
+
+        // Only creator or existing grantees can view grants
+        const canView =
+          dot.created_by === authContext.requesting_user ||
+          grants.some((g) => g.user_id === authContext.requesting_user);
+
+        if (!canView) {
+          return json(403, {
+            error: "forbidden",
+            detail: "You do not have permission to view grants for this dot",
+          });
+        }
+
+        return json(200, { grants });
+      } catch (err: unknown) {
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to retrieve grants",
+        });
+      }
+    }
+
     return json(404, { error: "not_found", path: url.pathname });
   },
 };
