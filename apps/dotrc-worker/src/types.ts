@@ -72,7 +72,7 @@ export interface AuthContext {
  * DotRC error kinds mapping to HTTP status codes:
  * - Validation: 400 Bad Request - Invalid input (e.g., missing required fields, invalid format)
  * - Authorization: 403 Forbidden - User lacks permission for the requested operation
- * - Link: 500 Internal Server Error - Invalid link operation (e.g., circular dependency)
+ * - Link: 409 Conflict - Invalid link operation (e.g., self-reference, duplicate link)
  * - ServerError: 500 Internal Server Error - Unexpected errors (e.g., parse failures)
  */
 export type DotrcErrorKind =
