@@ -203,11 +203,14 @@ export default {
         // Persist to D1 if available
         if (env.DB) {
           const storage = new D1DotStorage(env.DB);
-          await storage.storeDot({
+          const storeRequest = {
             dot: result.dot,
             grants: result.grants,
             links: result.links,
-          });
+          };
+          // Lazily ensure all referenced users/scopes/tenant exist
+          await storage.ensureEntities(storeRequest, timestamp);
+          await storage.storeDot(storeRequest);
         }
 
         return json(201, {

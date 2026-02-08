@@ -5,6 +5,9 @@ import type { Dot, VisibilityGrant, Link } from "./types";
 // Mock D1 database
 class MockD1Database implements D1Database {
   private data: {
+    tenants: Map<string, any>;
+    users: Map<string, any>;
+    scopes: Map<string, any>;
     dots: Map<string, any>;
     grants: Map<string, any[]>;
     tags: Map<string, string[]>;
@@ -14,6 +17,9 @@ class MockD1Database implements D1Database {
 
   constructor() {
     this.data = {
+      tenants: new Map(),
+      users: new Map(),
+      scopes: new Map(),
       dots: new Map(),
       grants: new Map(),
       tags: new Map(),
@@ -21,6 +27,10 @@ class MockD1Database implements D1Database {
       links: new Map(),
     };
   }
+
+  getTenants() { return this.data.tenants; }
+  getUsers() { return this.data.users; }
+  getScopes() { return this.data.scopes; }
 
   prepare(query: string) {
     const self = this;
@@ -32,8 +42,25 @@ class MockD1Database implements D1Database {
         return this;
       },
       async run() {
+        // Parse INSERT OR IGNORE queries for lazy creation
+        if (query.includes("INSERT OR IGNORE INTO tenants")) {
+          const [id, name, created_at] = bindings;
+          if (!self.data.tenants.has(id as string)) {
+            self.data.tenants.set(id as string, { id, name, created_at });
+          }
+        } else if (query.includes("INSERT OR IGNORE INTO users")) {
+          const [id, tenant_id, display_name, created_at] = bindings;
+          if (!self.data.users.has(id as string)) {
+            self.data.users.set(id as string, { id, tenant_id, display_name, created_at });
+          }
+        } else if (query.includes("INSERT OR IGNORE INTO scopes")) {
+          const [id, tenant_id, name, type, created_at] = bindings;
+          if (!self.data.scopes.has(id as string)) {
+            self.data.scopes.set(id as string, { id, tenant_id, name, type, created_at });
+          }
+        }
         // Parse INSERT queries
-        if (query.includes("INSERT INTO dots")) {
+        else if (query.includes("INSERT INTO dots")) {
           const [id, tenant_id, title, body, created_by, scope_id, created_at] = bindings;
           self.data.dots.set(id as string, {
             id,
@@ -69,6 +96,18 @@ class MockD1Database implements D1Database {
         return { success: true, meta: {} };
       },
       async first<T = unknown>(): Promise<T | null> {
+        if (query.includes("SELECT tenant_id FROM users WHERE id")) {
+          const [userId] = bindings;
+          const user = self.data.users.get(userId as string);
+          if (!user) return null;
+          return { tenant_id: user.tenant_id } as T;
+        }
+        if (query.includes("SELECT tenant_id FROM scopes WHERE id")) {
+          const [scopeId] = bindings;
+          const scope = self.data.scopes.get(scopeId as string);
+          if (!scope) return null;
+          return { tenant_id: scope.tenant_id } as T;
+        }
         if (query.includes("SELECT") && query.includes("FROM dots")) {
           const [tenant_id, dot_id] = bindings;
           const dot = self.data.dots.get(dot_id as string);
@@ -434,6 +473,111 @@ describe("D1DotStorage", () => {
 
       expect(result.dots).toHaveLength(2);
       expect(result.hasMore).toBe(true);
+    });
+  });
+
+  describe("ensureTenant", () => {
+    it("creates a tenant", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      expect(db.getTenants().has("tenant-1")).toBe(true);
+    });
+
+    it("is idempotent — no error on duplicate", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureTenant("tenant-1", "2025-12-22T01:00:00Z");
+      // Should still exist with original timestamp
+      expect(db.getTenants().get("tenant-1").created_at).toBe("2025-12-22T00:00:00Z");
+    });
+  });
+
+  describe("ensureUser", () => {
+    it("creates a user", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
+      expect(db.getUsers().has("user-1")).toBe(true);
+    });
+
+    it("is idempotent — no error on duplicate", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureUser("user-1", "tenant-1", "2025-12-22T01:00:00Z");
+      expect(db.getUsers().get("user-1").created_at).toBe("2025-12-22T00:00:00Z");
+    });
+
+    it("throws on cross-tenant user ID collision", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureTenant("tenant-2", "2025-12-22T00:00:00Z");
+      await storage.ensureUser("user-1", "tenant-1", "2025-12-22T00:00:00Z");
+      await expect(
+        storage.ensureUser("user-1", "tenant-2", "2025-12-22T00:00:00Z")
+      ).rejects.toThrow("User user-1 belongs to tenant tenant-1, not tenant-2");
+    });
+  });
+
+  describe("ensureScope", () => {
+    it("creates a scope", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
+      expect(db.getScopes().has("scope-1")).toBe(true);
+    });
+
+    it("is idempotent — no error on duplicate", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T01:00:00Z");
+      expect(db.getScopes().get("scope-1").created_at).toBe("2025-12-22T00:00:00Z");
+    });
+
+    it("throws on cross-tenant scope ID collision", async () => {
+      await storage.ensureTenant("tenant-1", "2025-12-22T00:00:00Z");
+      await storage.ensureTenant("tenant-2", "2025-12-22T00:00:00Z");
+      await storage.ensureScope("scope-1", "tenant-1", "2025-12-22T00:00:00Z");
+      await expect(
+        storage.ensureScope("scope-1", "tenant-2", "2025-12-22T00:00:00Z")
+      ).rejects.toThrow("Scope scope-1 belongs to tenant tenant-1, not tenant-2");
+    });
+  });
+
+  describe("ensureEntities", () => {
+    it("ensures all referenced entities before storing a dot", async () => {
+      const dot: Dot = {
+        id: "dot-100",
+        tenant_id: "tenant-1",
+        title: "Test",
+        created_by: "user-1",
+        scope_id: "scope-1",
+        created_at: "2025-12-22T00:00:00Z",
+        tags: [],
+        attachments: [],
+      };
+
+      const grants: VisibilityGrant[] = [
+        {
+          dot_id: "dot-100",
+          user_id: "user-1",
+          granted_at: "2025-12-22T00:00:00Z",
+          granted_by: "user-1",
+        },
+        {
+          dot_id: "dot-100",
+          user_id: "user-2",
+          granted_at: "2025-12-22T00:00:00Z",
+        },
+        {
+          dot_id: "dot-100",
+          scope_id: "scope-2",
+          granted_at: "2025-12-22T00:00:00Z",
+        },
+      ];
+
+      const request = { dot, grants, links: [] };
+      await storage.ensureEntities(request, "2025-12-22T00:00:00Z");
+
+      expect(db.getTenants().has("tenant-1")).toBe(true);
+      expect(db.getUsers().has("user-1")).toBe(true);
+      expect(db.getUsers().has("user-2")).toBe(true);
+      expect(db.getScopes().has("scope-1")).toBe(true);
+      expect(db.getScopes().has("scope-2")).toBe(true);
     });
   });
 });

@@ -121,6 +121,16 @@ When adding features, update the relevant docs:
 - **Core changes** → `docs/core-architecture.md`
 - **Data model changes** → `docs/data-model.md`
 
+## User and Scope Auto-Creation (Lazy Strategy)
+
+Users, scopes, and tenants are **lazily created** on first reference. When a dot is created, the adapter calls `D1DotStorage.ensureEntities()` which uses `INSERT OR IGNORE` to idempotently create any referenced tenants, users, and scopes that don't yet exist.
+
+This means:
+- No separate admin endpoint or migration is needed to seed users/scopes
+- The first API request from a new user automatically provisions their identity
+- Duplicate creation attempts are silently ignored (idempotent)
+- Display names currently default to the user/scope ID; there is no API endpoint yet for updating them
+
 ## Architecture Principles
 
 See [Copilot Instructions](/.github/copilot-instructions.md) for core principles:
