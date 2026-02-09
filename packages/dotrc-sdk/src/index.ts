@@ -1,1 +1,34 @@
-// dotrc-sdk (stub)
+export { DotrcClient } from "./client";
+export { DotrcApiError, DotrcNetworkError } from "./errors";
+export type { DotrcErrorKind } from "./errors";
+export type {
+  Timestamp,
+  TenantId,
+  UserId,
+  ScopeId,
+  DotId,
+  Tag,
+  LinkType,
+  Dot,
+  CreateDotInput,
+  CreateDotResponse,
+  AttachmentRef,
+  UploadAttachmentResponse,
+  VisibilityGrant,
+  GrantAccessInput,
+  GrantAccessResponse,
+  Link,
+  CreateLinkInput,
+  CreateLinkResponse,
+  ListDotsResponse,
+  PaginationOptions,
+  ListGrantsResponse,
+  ListLinksResponse,
+  BatchDotResult,
+  BatchDotsResponse,
+  BatchGrantInput,
+  BatchGrantResult,
+  BatchGrantsResponse,
+  HealthResponse,
+  DotrcClientConfig,
+} from "./types";
