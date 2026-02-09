@@ -21,6 +21,9 @@ import type {
   DotId,
   UserId,
   ScopeId,
+  Integration,
+  ExternalIdentity,
+  ScopeMembership,
 } from "./types";
 
 /**
@@ -666,5 +669,143 @@ export class D1DotStorage implements DotStorage {
       total: enrichedDots.length,
       hasMore,
     };
+  }
+
+  // --- Integration storage methods ---
+
+  /**
+   * Store a new integration record.
+   */
+  async storeIntegration(integration: Integration): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO integrations (id, tenant_id, provider, workspace_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        integration.id,
+        integration.tenant_id,
+        integration.provider,
+        integration.workspace_id,
+        integration.created_at,
+      )
+      .run();
+    if (!result.success) {
+      throw new Error(`Failed to store integration: ${result.error}`);
+    }
+  }
+
+  /**
+   * Get an integration by provider and workspace ID.
+   */
+  async getIntegrationByWorkspace(
+    provider: string,
+    workspaceId: string,
+  ): Promise<Integration | null> {
+    return this.db
+      .prepare(
+        `SELECT id, tenant_id, provider, workspace_id, created_at
+         FROM integrations
+         WHERE provider = ? AND workspace_id = ?`,
+      )
+      .bind(provider, workspaceId)
+      .first<Integration>();
+  }
+
+  /**
+   * Get an integration by ID.
+   */
+  async getIntegration(integrationId: string): Promise<Integration | null> {
+    return this.db
+      .prepare(
+        `SELECT id, tenant_id, provider, workspace_id, created_at
+         FROM integrations
+         WHERE id = ?`,
+      )
+      .bind(integrationId)
+      .first<Integration>();
+  }
+
+  /**
+   * List integrations for a tenant.
+   */
+  async listIntegrations(tenantId: TenantId): Promise<Integration[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT id, tenant_id, provider, workspace_id, created_at
+         FROM integrations
+         WHERE tenant_id = ?`,
+      )
+      .bind(tenantId)
+      .all<Integration>();
+    return result.results || [];
+  }
+
+  /**
+   * Store or update an external identity mapping.
+   * Maps an external user ID (e.g., Slack user) to an internal user.
+   */
+  async storeExternalIdentity(identity: ExternalIdentity): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `INSERT OR REPLACE INTO external_identities
+         (user_id, integration_id, external_user_id, display_name, linked_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        identity.user_id,
+        identity.integration_id,
+        identity.external_user_id,
+        identity.display_name,
+        identity.linked_at,
+      )
+      .run();
+    if (!result.success) {
+      throw new Error(`Failed to store external identity: ${result.error}`);
+    }
+  }
+
+  /**
+   * Look up an internal user by their external provider ID.
+   */
+  async getExternalIdentityByExternalId(
+    integrationId: string,
+    externalUserId: string,
+  ): Promise<ExternalIdentity | null> {
+    return this.db
+      .prepare(
+        `SELECT user_id, integration_id, external_user_id, display_name, linked_at
+         FROM external_identities
+         WHERE integration_id = ? AND external_user_id = ?`,
+      )
+      .bind(integrationId, externalUserId)
+      .first<ExternalIdentity>();
+  }
+
+  /**
+   * Store a scope membership (e.g., user is member of a Slack channel).
+   */
+  async storeScopeMembership(membership: ScopeMembership): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `INSERT OR IGNORE INTO scope_memberships (scope_id, user_id, joined_at)
+         VALUES (?, ?, ?)`,
+      )
+      .bind(membership.scope_id, membership.user_id, membership.joined_at)
+      .run();
+    if (!result.success) {
+      throw new Error(`Failed to store scope membership: ${result.error}`);
+    }
+  }
+
+  /**
+   * Get all user IDs that are members of a scope.
+   */
+  async getScopeMembers(scopeId: ScopeId): Promise<UserId[]> {
+    const result = await this.db
+      .prepare(`SELECT user_id FROM scope_memberships WHERE scope_id = ?`)
+      .bind(scopeId)
+      .all<{ user_id: string }>();
+    return (result.results || []).map((r) => r.user_id);
   }
 }
