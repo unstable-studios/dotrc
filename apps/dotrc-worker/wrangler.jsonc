@@ -4,6 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-12-20",
 
+  // Environment variables
+  // ENVIRONMENT defaults to "production" — DevelopmentProvider is only
+  // enabled when ENVIRONMENT !== "production" (e.g., local dev via `wrangler dev`)
+  "vars": {
+    "ENVIRONMENT": "production"
+  },
+
   // D1 database binding for persistence
   //
   // Setup:

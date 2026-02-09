@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { JsonValue, JsonObject } from "./index";
+import { parsePaginationParams, ALLOWED_MIME_TYPES } from "./utils";
 
 // Mock WASM module
 const mockWasm = {
@@ -397,6 +398,79 @@ describe("Worker Handler", () => {
       const url2 = "/api/v1/dots";
       const segments2 = url2.replace(/\/+$/, "").split("/").filter(Boolean);
       expect(segments2).toEqual(["api", "v1", "dots"]);
+    });
+  });
+
+  describe("Pagination Parameters", () => {
+    it("returns defaults for missing params", () => {
+      const url = new URL("https://example.com/dots");
+      const { limit, offset } = parsePaginationParams(url);
+      expect(limit).toBe(50);
+      expect(offset).toBe(0);
+    });
+
+    it("clamps limit to max 100", () => {
+      const url = new URL("https://example.com/dots?limit=500");
+      const { limit } = parsePaginationParams(url);
+      expect(limit).toBe(100);
+    });
+
+    it("clamps limit to min 1", () => {
+      const url = new URL("https://example.com/dots?limit=-10");
+      const { limit } = parsePaginationParams(url);
+      expect(limit).toBe(1);
+    });
+
+    it("clamps offset to min 0", () => {
+      const url = new URL("https://example.com/dots?offset=-5");
+      const { offset } = parsePaginationParams(url);
+      expect(offset).toBe(0);
+    });
+
+    it("defaults NaN limit to 50", () => {
+      const url = new URL("https://example.com/dots?limit=abc");
+      const { limit } = parsePaginationParams(url);
+      expect(limit).toBe(50);
+    });
+
+    it("defaults NaN offset to 0", () => {
+      const url = new URL("https://example.com/dots?offset=xyz");
+      const { offset } = parsePaginationParams(url);
+      expect(offset).toBe(0);
+    });
+
+    it("accepts valid in-range values", () => {
+      const url = new URL("https://example.com/dots?limit=25&offset=10");
+      const { limit, offset } = parsePaginationParams(url);
+      expect(limit).toBe(25);
+      expect(offset).toBe(10);
+    });
+  });
+
+  describe("MIME Type Allowlist", () => {
+    it("allows common document types", () => {
+      expect(ALLOWED_MIME_TYPES.has("application/pdf")).toBe(true);
+      expect(ALLOWED_MIME_TYPES.has("text/plain")).toBe(true);
+      expect(ALLOWED_MIME_TYPES.has("application/json")).toBe(true);
+    });
+
+    it("allows common image types", () => {
+      expect(ALLOWED_MIME_TYPES.has("image/png")).toBe(true);
+      expect(ALLOWED_MIME_TYPES.has("image/jpeg")).toBe(true);
+      expect(ALLOWED_MIME_TYPES.has("image/gif")).toBe(true);
+    });
+
+    it("allows fallback octet-stream", () => {
+      expect(ALLOWED_MIME_TYPES.has("application/octet-stream")).toBe(true);
+    });
+
+    it("rejects executable types", () => {
+      expect(ALLOWED_MIME_TYPES.has("application/x-executable")).toBe(false);
+      expect(ALLOWED_MIME_TYPES.has("application/x-msdownload")).toBe(false);
+    });
+
+    it("rejects HTML (potential XSS vector)", () => {
+      expect(ALLOWED_MIME_TYPES.has("text/html")).toBe(false);
     });
   });
 
