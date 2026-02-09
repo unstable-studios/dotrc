@@ -129,6 +129,19 @@ export class R2AttachmentStorage implements AttachmentStorage {
   }
 
   /**
+   * Delete an attachment file from R2.
+   */
+  async deleteAttachment(storageKey: string): Promise<void> {
+    try {
+      await this.bucket.delete(storageKey);
+    } catch (err) {
+      throw new Error(`Failed to delete attachment from R2: ${storageKey}`, {
+        cause: err,
+      });
+    }
+  }
+
+  /**
    * Generate a signed URL for direct attachment access.
    * Note: R2 doesn't natively support signed URLs in Workers yet.
    * This returns a placeholder - adapter should use R2 presigned URLs via REST API.
