@@ -9,6 +9,8 @@ import {
   parsePaginationParams,
   ALLOWED_MIME_TYPES,
 } from "./utils";
+import { createLogger } from "./logger";
+import type { Logger } from "./logger";
 import {
   resolveAuthContext,
   JWTProvider,
@@ -97,7 +99,8 @@ function parsePath(url: URL): string[] {
  */
 async function getAuthContext(
   request: Request,
-  env: Env
+  env: Env,
+  logger?: Logger
 ): Promise<(AuthContext & { tenant_id: string }) | null> {
   // Validate and parse clock skew configuration
   const clockSkewSeconds = env.JWT_CLOCK_SKEW_SECONDS
@@ -129,14 +132,91 @@ async function getAuthContext(
     authProviders.push(new DevelopmentProvider());
   }
 
-  return await resolveAuthContext(request, authProviders);
+  const result = await resolveAuthContext(request, authProviders);
+  if (result) {
+    logger?.info("auth.success", {
+      tenantId: result.tenant_id,
+      userId: result.requesting_user,
+    });
+  } else {
+    logger?.warn("auth.failed");
+  }
+  return result;
+}
+
+/**
+ * Generate a request ID. Uses cf-ray header in production,
+ * falls back to crypto.randomUUID() for local dev.
+ */
+function getRequestId(request: Request): string {
+  return request.headers.get("cf-ray") || crypto.randomUUID();
+}
+
+/**
+ * Add x-request-id and security headers to a response.
+ */
+function withRequestHeaders(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set("x-request-id", requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const startTime = Date.now();
     const url = new URL(request.url);
     const segments = parsePath(url);
+    const requestId = getRequestId(request);
 
+    const logger = createLogger({
+      requestId,
+      method: request.method,
+      path: url.pathname,
+    });
+
+    logger.info("request.start");
+
+    try {
+      const response = await handleRequest(
+        request,
+        env,
+        url,
+        segments,
+        logger
+      );
+      const durationMs = Date.now() - startTime;
+      logger.info("request.complete", {
+        status: response.status,
+        durationMs,
+      });
+      return withRequestHeaders(response, requestId);
+    } catch (err: unknown) {
+      const durationMs = Date.now() - startTime;
+      logger.error("request.unhandled_error", {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        durationMs,
+      });
+      const response = json(500, {
+        error: "internal_error",
+        detail: "An unexpected error occurred",
+      });
+      return withRequestHeaders(response, requestId);
+    }
+  },
+};
+
+async function handleRequest(
+  request: Request,
+  env: Env,
+  url: URL,
+  segments: string[],
+  logger: Logger
+): Promise<Response> {
     // Health
     if (request.method === "GET" && segments.length === 0) {
       return json(200, { status: "ok", service: "dotrc-worker" });
@@ -149,7 +229,7 @@ export default {
       segments[0] === "dots"
     ) {
       // Resolve auth context from trusted sources
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
 
       if (!authContext) {
         return json(401, {
@@ -240,6 +320,10 @@ export default {
       } catch (err: unknown) {
         // Handle errors from core with typed error kinds
         if (err instanceof DotrcError) {
+          logger.warn("dot.create_failed", {
+            kind: err.kind,
+            error: err.message,
+          });
           const status =
             err.kind === "Validation"
               ? 400
@@ -290,7 +374,7 @@ export default {
       const dotId = segments[1];
 
       // Resolve auth context
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
 
       if (!authContext) {
         return json(401, {
@@ -354,7 +438,7 @@ export default {
       segments[0] === "dots"
     ) {
       // Resolve auth context
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
 
       if (!authContext) {
         return json(401, {
@@ -413,7 +497,7 @@ export default {
     ) {
       const dotId = segments[1];
 
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -554,7 +638,7 @@ export default {
     ) {
       const dotId = segments[1];
 
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -612,7 +696,7 @@ export default {
     ) {
       const fromDotId = segments[1];
 
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -768,7 +852,7 @@ export default {
     ) {
       const dotId = segments[1];
 
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -851,7 +935,7 @@ export default {
     ) {
       const dotId = segments[1];
 
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -1057,7 +1141,7 @@ export default {
     ) {
       const attachmentId = segments[1];
 
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -1172,7 +1256,7 @@ export default {
       segments[0] === "batch" &&
       segments[1] === "dots"
     ) {
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -1393,7 +1477,7 @@ export default {
       segments[0] === "batch" &&
       segments[1] === "grants"
     ) {
-      const authContext = await getAuthContext(request, env);
+      const authContext = await getAuthContext(request, env, logger);
       if (!authContext) {
         return json(401, {
           error: "unauthorized",
@@ -1579,5 +1663,4 @@ export default {
     }
 
     return json(404, { error: "not_found", path: url.pathname });
-  },
-};
+}
