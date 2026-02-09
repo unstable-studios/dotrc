@@ -1,11 +1,12 @@
-.PHONY: help bootstrap fmt lint test test-rust test-wasm test-core dev-worker dev-web build-wasm clean
+.PHONY: help bootstrap fmt lint test test-rust test-wasm test-core test-worker test-sdk dev-worker dev-web build-wasm clean
 
 help:
 	@echo "dotrc make targets:"
 	@echo "  make bootstrap    Install JS deps (pnpm)"
 	@echo "  make fmt          Format Rust code"
 	@echo "  make lint         Run clippy + type checks"
-	@echo "  make test         Run all tests (rust + wasm)"
+	@echo "  make test         Run all tests (rust + wasm + worker + sdk)"
+	@echo "  make test-sdk     Run SDK tests"
 	@echo "  make test-rust    Run Rust tests"
 	@echo "  make test-wasm    Run WASM integration tests"
 	@echo "  make test-core    Run dotrc-core tests only"
@@ -24,8 +25,9 @@ lint:
 	cargo clippy --all-targets --all-features -- -D warnings || true
 	@echo "Type-checking TypeScript..."
 	cd apps/dotrc-worker && pnpm tsc --noEmit
+	cd packages/dotrc-sdk && pnpm tsc --noEmit
 
-test: test-rust test-wasm test-worker
+test: test-rust test-wasm test-worker test-sdk
 	@echo "✓ All tests passed"
 
 test-rust:
@@ -39,6 +41,10 @@ test-wasm: build-wasm
 test-worker:
 	@echo "Running worker tests..."
 	cd apps/dotrc-worker && pnpm test
+
+test-sdk:
+	@echo "Running SDK tests..."
+	cd packages/dotrc-sdk && pnpm test
 
 test-core:
 	cargo test -p dotrc-core
