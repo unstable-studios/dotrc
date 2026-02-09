@@ -2,5 +2,5 @@
   "crates/dotrc-core": "0.3.0",
   "crates/dotrc-core-wasm": "0.4.0",
   "crates/dotrc-server": "0.1.0",
-  "apps/dotrc-worker": "1.1.0"
+  "apps/dotrc-worker": "1.2.0"
 }
