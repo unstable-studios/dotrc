@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v1.1.0...dotrc-worker-v1.2.0) (2026-02-09)
+
+
+### Features
+
+* **worker:** implement R2 storage, attachment endpoints, and batch API ([#66](https://github.com/unstable-studios/dotrc/issues/66)) ([65ba6bb](https://github.com/unstable-studios/dotrc/commit/65ba6bb84915048c03cc8c58ca2a3ce0c2c3d36e))
+
 ## [1.1.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v1.0.0...dotrc-worker-v1.1.0) (2026-02-09)
 
 
