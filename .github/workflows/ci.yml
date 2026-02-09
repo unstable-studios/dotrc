@@ -79,13 +79,13 @@ jobs:
         run: pnpm --filter dotrc-sdk run build
 
       - name: Type check (dotrc)
-        run: pnpm --filter dotrc run typecheck
+        run: pnpm --filter @unstable-studios/dotrc run typecheck
 
       - name: Test (dotrc)
-        run: pnpm --filter dotrc test
+        run: pnpm --filter @unstable-studios/dotrc test
 
       - name: Build dotrc
-        run: pnpm --filter dotrc run build
+        run: pnpm --filter @unstable-studios/dotrc run build
 
       - name: Type check (web)
         run: pnpm --filter dotrc-web run typecheck

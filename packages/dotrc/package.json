@@ -1,11 +1,19 @@
 {
-  "name": "dotrc",
+  "name": "@unstable-studios/dotrc",
   "version": "0.1.0",
   "description": "Embeddable DotRC client with WASM core and IndexedDB storage",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unstable-studios/dotrc.git",
+    "directory": "packages/dotrc"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "exports": {
     ".": {
       "import": {

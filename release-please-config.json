@@ -19,6 +19,11 @@
       "release-type": "node",
       "package-name": "dotrc-worker",
       "changelog-path": "CHANGELOG.md"
+    },
+    "packages/dotrc": {
+      "release-type": "node",
+      "package-name": "@unstable-studios/dotrc",
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "bump-minor-pre-major": false,
