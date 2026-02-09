@@ -1,4 +1,4 @@
-.PHONY: help bootstrap fmt lint test test-rust test-wasm test-core test-worker test-sdk test-web dev-worker dev-web build-wasm clean
+.PHONY: help bootstrap fmt lint test test-rust test-wasm test-core test-worker test-sdk test-web test-dotrc dev-worker dev-web build-wasm build-dotrc clean
 
 help:
 	@echo "dotrc make targets:"
@@ -7,12 +7,14 @@ help:
 	@echo "  make lint         Run clippy + type checks"
 	@echo "  make test         Run all tests (rust + wasm + worker + sdk + web)"
 	@echo "  make test-sdk     Run SDK tests"
+	@echo "  make test-dotrc   Run embeddable package tests"
 	@echo "  make test-web     Run web UI tests"
 	@echo "  make test-rust    Run Rust tests"
 	@echo "  make test-wasm    Run WASM integration tests"
 	@echo "  make test-core    Run dotrc-core tests only"
 	@echo "  make dev-worker   Run Cloudflare Worker locally"
 	@echo "  make dev-web      Run web UI locally"
+	@echo "  make build-dotrc  Build embeddable package"
 	@echo "  make build-wasm   Build WASM core"
 	@echo "  make clean        Clean build artifacts"
 
@@ -27,9 +29,10 @@ lint:
 	@echo "Type-checking TypeScript..."
 	cd apps/dotrc-worker && pnpm tsc --noEmit
 	cd packages/dotrc-sdk && pnpm tsc --noEmit
+	cd packages/dotrc && pnpm tsc --noEmit
 	cd apps/dotrc-web && pnpm typecheck
 
-test: test-rust test-wasm test-worker test-sdk test-web
+test: test-rust test-wasm test-worker test-sdk test-dotrc test-web
 	@echo "✓ All tests passed"
 
 test-rust:
@@ -48,6 +51,10 @@ test-sdk:
 	@echo "Running SDK tests..."
 	cd packages/dotrc-sdk && pnpm test
 
+test-dotrc:
+	@echo "Running embeddable package tests..."
+	cd packages/dotrc && pnpm test
+
 test-web:
 	@echo "Running web UI tests..."
 	cd apps/dotrc-web && pnpm test
@@ -60,6 +67,10 @@ dev-worker:
 
 dev-web:
 	cd apps/dotrc-web && pnpm dev
+
+build-dotrc:
+	@echo "Building embeddable package..."
+	cd packages/dotrc && pnpm build
 
 build-wasm:
 	@echo "Building WASM..."
