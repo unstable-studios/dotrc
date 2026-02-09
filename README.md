@@ -198,6 +198,21 @@ DotRC uses a pluggable authentication system where adapters handle trust boundar
 - Multi-tenant: Tenant isolation enforced at every operation
 - Pluggable: Swap providers without changing core
 
+## Documentation
+
+- **[Getting Started](docs/guides/getting-started.md)** — Deploy the worker and create your first dot
+- **[API Reference](docs/guides/api-reference.md)** — All 15 endpoints with request/response schemas
+- **[Authentication](docs/guides/authentication.md)** — Provider chain and configuration
+- **[SDK Usage](docs/guides/sdk-usage.md)** — TypeScript SDK examples
+- **[Deployment](docs/guides/deployment.md)** — Cloudflare Worker deployment guide
+- **[Self-Hosting](docs/guides/self-hosting.md)** — dotrc-server with Postgres
+- **[Slack Integration](docs/guides/slack-integration.md)** — Slack app setup
+- **[Error Reference](docs/guides/error-reference.md)** — Error codes and troubleshooting
+- **[OpenAPI Spec](docs/openapi.yaml)** — OpenAPI 3.1 specification
+- **[Contributing](docs/contributing.md)** — Dev setup, testing, PR process
+
+For architecture and invariants, see [docs/README.md](docs/README.md).
+
 ## What not to do
 
 - Don't add DB access to core

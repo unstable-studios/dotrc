@@ -1,0 +1,855 @@
+openapi: 3.1.0
+info:
+  title: DotRC API
+  version: 0.1.0
+  description: |
+    Append-only record system for logging immutable facts ("dots") with
+    explicit visibility and durable history.
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.dotrc.dev
+    description: Production
+  - url: http://localhost:8787
+    description: Local development
+
+security:
+  - bearerAuth: []
+  - trustedHeaders: []
+
+paths:
+  /:
+    get:
+      summary: Health check
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /dots:
+    post:
+      summary: Create a dot
+      operationId: createDot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDotInput"
+      responses:
+        "201":
+          description: Dot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDotResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      summary: List dots
+      operationId: listDots
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated list of dots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListDotsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /dots/{dotId}:
+    get:
+      summary: Get a dot
+      operationId: getDot
+      parameters:
+        - $ref: "#/components/parameters/DotId"
+      responses:
+        "200":
+          description: Dot details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /dots/{dotId}/grants:
+    post:
+      summary: Grant access to a dot
+      operationId: grantAccess
+      parameters:
+        - $ref: "#/components/parameters/DotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantAccessInput"
+      responses:
+        "201":
+          description: Access granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrantAccessResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      summary: List grants for a dot
+      operationId: getGrants
+      parameters:
+        - $ref: "#/components/parameters/DotId"
+      responses:
+        "200":
+          description: List of visibility grants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListGrantsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /dots/{dotId}/links:
+    post:
+      summary: Create a link
+      operationId: createLink
+      parameters:
+        - $ref: "#/components/parameters/DotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLinkInput"
+      responses:
+        "201":
+          description: Link created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateLinkResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/LinkError"
+
+    get:
+      summary: List links for a dot
+      operationId: getLinks
+      parameters:
+        - $ref: "#/components/parameters/DotId"
+      responses:
+        "200":
+          description: List of links
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListLinksResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /dots/{dotId}/attachments:
+    post:
+      summary: Upload an attachment
+      operationId: uploadAttachment
+      parameters:
+        - $ref: "#/components/parameters/DotId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File to upload (max 10MB)
+      responses:
+        "201":
+          description: Attachment uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadAttachmentResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /attachments/{attachmentId}:
+    get:
+      summary: Download an attachment
+      operationId: getAttachment
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Attachment file data
+          headers:
+            content-disposition:
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /batch/dots:
+    post:
+      summary: Batch create dots
+      operationId: batchCreateDots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/CreateDotInput"
+              maxItems: 50
+              minItems: 1
+      responses:
+        "201":
+          description: All dots created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchDotsResponse"
+        "207":
+          description: Partial success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchDotsResponse"
+        "400":
+          description: All operations failed or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchDotsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /batch/grants:
+    post:
+      summary: Batch grant access
+      operationId: batchGrantAccess
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/BatchGrantInput"
+              maxItems: 50
+              minItems: 1
+      responses:
+        "201":
+          description: All grants created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchGrantsResponse"
+        "207":
+          description: Partial success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchGrantsResponse"
+        "400":
+          description: All operations failed or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchGrantsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /slack/events:
+    post:
+      summary: Slack Events API webhook
+      operationId: slackEvents
+      security: []
+      description: |
+        Handles Slack event callbacks. Verified using x-slack-signature.
+        Supports url_verification and event_callback types.
+      responses:
+        "200":
+          description: Event processed
+        "401":
+          description: Invalid Slack signature
+
+  /slack/commands:
+    post:
+      summary: Slack slash commands
+      operationId: slackCommands
+      security: []
+      description: Handles /dot slash command from Slack.
+      responses:
+        "200":
+          description: Command response
+
+  /slack/install:
+    get:
+      summary: Slack OAuth install redirect
+      operationId: slackInstall
+      security: []
+      responses:
+        "302":
+          description: Redirect to Slack OAuth
+
+  /slack/oauth_redirect:
+    get:
+      summary: Slack OAuth callback
+      operationId: slackOAuthRedirect
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Existing workspace reconnected
+        "201":
+          description: New workspace connected
+        "400":
+          description: OAuth denied or missing code
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token (Auth0, Okta, Azure AD, etc.)
+
+    trustedHeaders:
+      type: apiKey
+      in: header
+      name: x-tenant-id
+      description: |
+        Trusted header authentication (use with x-user-id header).
+        Only for reverse proxy deployments.
+
+  parameters:
+    DotId:
+      name: dotId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique dot identifier
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+      description: Maximum number of results
+
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Pagination offset
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: unauthorized
+            detail: No valid authentication provided
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: forbidden
+            detail: You do not have permission to view this dot
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: not_found
+            detail: Dot not found
+
+    ValidationError:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: validation_failed
+            kind: Validation
+            detail: "title must not be empty"
+
+    LinkError:
+      description: Invalid link operation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: link_error
+            kind: Link
+            detail: cannot link a dot to itself
+
+  schemas:
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 timestamp
+      example: "2024-01-15T10:30:00.000Z"
+
+    Dot:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - title
+        - created_by
+        - created_at
+        - tags
+        - attachments
+      properties:
+        id:
+          type: string
+        tenant_id:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        scope_id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentRef"
+
+    AttachmentRef:
+      type: object
+      required:
+        - id
+        - filename
+        - mime_type
+        - size_bytes
+        - content_hash
+        - created_at
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        content_hash:
+          type: string
+          description: "sha256:hex digest"
+        storage_key:
+          type: string
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    VisibilityGrant:
+      type: object
+      required:
+        - dot_id
+        - granted_at
+      properties:
+        dot_id:
+          type: string
+        user_id:
+          type: string
+        scope_id:
+          type: string
+        granted_at:
+          $ref: "#/components/schemas/Timestamp"
+        granted_by:
+          type: string
+
+    Link:
+      type: object
+      required:
+        - from_dot_id
+        - to_dot_id
+        - link_type
+        - created_at
+      properties:
+        from_dot_id:
+          type: string
+        to_dot_id:
+          type: string
+        link_type:
+          type: string
+          enum:
+            - followup
+            - corrects
+            - supersedes
+            - related
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    CreateDotInput:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+        body:
+          type: string
+        scope_id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        visible_to_users:
+          type: array
+          items:
+            type: string
+        visible_to_scopes:
+          type: array
+          items:
+            type: string
+
+    CreateDotResponse:
+      type: object
+      required:
+        - dot_id
+        - created_at
+        - grants_count
+        - links_count
+      properties:
+        dot_id:
+          type: string
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        grants_count:
+          type: integer
+        links_count:
+          type: integer
+
+    GrantAccessInput:
+      type: object
+      properties:
+        user_ids:
+          type: array
+          items:
+            type: string
+        scope_ids:
+          type: array
+          items:
+            type: string
+
+    GrantAccessResponse:
+      type: object
+      required:
+        - grants
+        - grants_count
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/VisibilityGrant"
+        grants_count:
+          type: integer
+
+    CreateLinkInput:
+      type: object
+      required:
+        - to_dot_id
+        - link_type
+      properties:
+        to_dot_id:
+          type: string
+        link_type:
+          type: string
+          enum:
+            - followup
+            - corrects
+            - supersedes
+            - related
+
+    CreateLinkResponse:
+      type: object
+      required:
+        - link
+      properties:
+        link:
+          $ref: "#/components/schemas/Link"
+
+    ListDotsResponse:
+      type: object
+      required:
+        - dots
+        - total
+        - has_more
+        - limit
+        - offset
+      properties:
+        dots:
+          type: array
+          items:
+            $ref: "#/components/schemas/Dot"
+        total:
+          type: integer
+        has_more:
+          type: boolean
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    ListGrantsResponse:
+      type: object
+      required:
+        - grants
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/VisibilityGrant"
+
+    ListLinksResponse:
+      type: object
+      required:
+        - links
+      properties:
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/Link"
+
+    UploadAttachmentResponse:
+      type: object
+      required:
+        - attachment_id
+        - filename
+        - mime_type
+        - size_bytes
+        - content_hash
+        - created_at
+      properties:
+        attachment_id:
+          type: string
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        content_hash:
+          type: string
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: dotrc-worker
+
+    BatchGrantInput:
+      type: object
+      required:
+        - dot_id
+      properties:
+        dot_id:
+          type: string
+        user_ids:
+          type: array
+          items:
+            type: string
+        scope_ids:
+          type: array
+          items:
+            type: string
+
+    BatchDotResult:
+      type: object
+      required:
+        - index
+        - status
+      properties:
+        index:
+          type: integer
+        status:
+          type: string
+          enum:
+            - ok
+            - error
+        dot_id:
+          type: string
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        grants_count:
+          type: integer
+        error:
+          type: string
+
+    BatchDotsResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchDotResult"
+
+    BatchGrantResult:
+      type: object
+      required:
+        - index
+        - status
+      properties:
+        index:
+          type: integer
+        status:
+          type: string
+          enum:
+            - ok
+            - error
+        dot_id:
+          type: string
+        grants_count:
+          type: integer
+        error:
+          type: string
+
+    BatchGrantsResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchGrantResult"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - detail
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+        detail:
+          type: string
+          description: Human-readable error message
+        kind:
+          type: string
+          enum:
+            - Validation
+            - Authorization
+            - Link
+            - ServerError
+          description: Error kind (maps to HTTP status)

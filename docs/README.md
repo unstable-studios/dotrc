@@ -8,46 +8,52 @@ not implementation details that change frequently.
 
 - Fewer docs, written clearly
 - Prefer invariants over tutorials
-- If a rule isn’t written down, it isn’t stable
-- If a doc keeps changing, it probably doesn’t belong here
+- If a rule isn't written down, it isn't stable
+- If a doc keeps changing, it probably doesn't belong here
 
-## Documents
+## Invariants & Architecture
 
-- **overview.md**  
-  What DotRC is, what it is not, and the core mental model.
+These documents describe _why_ DotRC works the way it does:
 
-- **core-architecture.md**  
-  The architectural contract for `dotrc-core` and its adapters.
+- **[overview.md](./overview.md)** — What DotRC is, what it is not, and the core mental model
+- **[core-architecture.md](./core-architecture.md)** — The architectural contract for `dotrc-core` and its adapters
+- **[data-model.md](./data-model.md)** — Conceptual domain entities (Dot, Scope, Link, ACL, etc.)
+- **[visibility-and-security.md](./visibility-and-security.md)** — How access control, immutability, and safe sharing work
+- **[integrations.md](./integrations.md)** — Adapter model for external systems (Slack, future providers)
+- **[design-decisions.md](./design-decisions.md)** — A log of intentional tradeoffs and why they were made
+- **[glossary.md](./glossary.md)** — Shared vocabulary for DotRC concepts
+- **[wasm-implementation.md](./wasm-implementation.md)** — WASM bridge design and conventions
 
-- **data-model.md**  
-  Conceptual domain entities (Dot, Scope, Link, ACL, etc.).  
-  This is _not_ a database schema.
+## Guides
 
-- **visibility-and-security.md**  
-  How access control, immutability, and safe sharing work.
+These documents describe _how_ to use DotRC:
 
-- **integrations.md**  
-  Adapter model for external systems (Slack, future providers).
+- **[Getting Started](./guides/getting-started.md)** — Deploy the worker and create your first dot
+- **[API Reference](./guides/api-reference.md)** — All endpoints with request/response schemas
+- **[Authentication](./guides/authentication.md)** — Provider chain: Cloudflare Access, JWT, Trusted Headers, Development
+- **[SDK Usage](./guides/sdk-usage.md)** — TypeScript SDK examples
+- **[Embedded Usage](./guides/embedded-usage.md)** — Using `packages/dotrc` for local-first apps
+- **[Deployment](./guides/deployment.md)** — Cloudflare Worker deployment (D1, R2, wrangler)
+- **[Self-Hosting](./guides/self-hosting.md)** — dotrc-server setup with Postgres
+- **[Slack Integration](./guides/slack-integration.md)** — Slack app setup, slash commands, events
+- **[Error Reference](./guides/error-reference.md)** — Error kinds, codes, and troubleshooting
 
-- **design-decisions.md**  
-  A log of intentional tradeoffs and why they were made.
+## API Specification
 
-- **glossary.md**  
-  Shared vocabulary for DotRC concepts.
+- **[openapi.yaml](./openapi.yaml)** — OpenAPI 3.1 specification for all worker endpoints
 
-## What does NOT belong here
+## Contributing
 
-- API reference docs
-- Slack command usage
-- UI behavior details
-- Database schemas
-
-Those belong with code, not with invariants.
+- **[contributing.md](./contributing.md)** — Dev setup, testing, PR process, architecture overview
 
 ## Rule of thumb
 
 If you are about to ask:
 
-> “Why does DotRC work this way?”
+> "Why does DotRC work this way?"
 
-The answer should live somewhere in this folder.
+The answer should live somewhere in the invariants section.
+
+> "How do I use DotRC?"
+
+The answer should live somewhere in the guides section.
