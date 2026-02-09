@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v1.0.0...dotrc-worker-v1.1.0) (2026-02-09)
+
+
+### Features
+
+* **worker:** implement access grant API endpoints ([#56](https://github.com/unstable-studios/dotrc/issues/56)) ([6126912](https://github.com/unstable-studios/dotrc/commit/6126912bbd545cde3e3b2318eca3167171cfc31e))
+* **worker:** implement lazy user/scope auto-creation ([#54](https://github.com/unstable-studios/dotrc/issues/54)) ([d970f8f](https://github.com/unstable-studios/dotrc/commit/d970f8fe6a197ca27a625472dd0f5183a8d3f28b))
+* **worker:** implement link creation API endpoints ([#57](https://github.com/unstable-studios/dotrc/issues/57)) ([b691cf7](https://github.com/unstable-studios/dotrc/commit/b691cf736cccb43a5d2e07110e51ae7ab6d26399))
+
 ## [1.0.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v0.3.0...dotrc-worker-v1.0.0) (2025-12-23)
 
 
