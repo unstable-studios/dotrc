@@ -77,3 +77,12 @@ jobs:
 
       - name: Build SDK
         run: pnpm --filter dotrc-sdk run build
+
+      - name: Type check (web)
+        run: pnpm --filter dotrc-web run typecheck
+
+      - name: Test (web)
+        run: pnpm --filter dotrc-web test
+
+      - name: Build web
+        run: pnpm --filter dotrc-web run build
