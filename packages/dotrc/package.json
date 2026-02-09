@@ -1,0 +1,41 @@
+{
+  "name": "dotrc",
+  "version": "0.1.0",
+  "description": "Embeddable DotRC client with WASM core and IndexedDB storage",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "idb": "^8.0.0"
+  },
+  "devDependencies": {
+    "dotrc-sdk": "workspace:*",
+    "fake-indexeddb": "^6.0.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "sideEffects": false,
+  "license": "MIT"
+}
