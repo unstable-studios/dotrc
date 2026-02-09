@@ -5,3 +5,16 @@ edition = "2021"
 
 [dependencies]
 dotrc-core = { path = "../dotrc-core" }
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+axum-test = "16"
