@@ -41,6 +41,7 @@ beforeAll(async () => {
   const db = await mf.getD1Database("DB");
   await applyMigration(db, "0001_initial_schema.sql");
   await applyMigration(db, "0002_attachment_storage_key.sql");
+  await applyMigration(db, "0003_performance_indexes.sql");
   storage = new D1DotStorage(db as unknown as D1Database);
 });
 
