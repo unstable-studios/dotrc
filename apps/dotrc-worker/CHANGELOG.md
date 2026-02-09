@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v1.2.0...dotrc-worker-v1.3.0) (2026-02-09)
+
+
+### Features
+
+* **server:** implement self-hosted Rust HTTP server ([#74](https://github.com/unstable-studios/dotrc/issues/74)) ([483188d](https://github.com/unstable-studios/dotrc/commit/483188dd583f9e0800ab8b153bd3bdbeb9899edc))
+* **worker:** add integration test suite with miniflare ([#68](https://github.com/unstable-studios/dotrc/issues/68)) ([a56f0f4](https://github.com/unstable-studios/dotrc/commit/a56f0f4c50a55f5964c8c69f667802af3c98a41c))
+* **worker:** add structured logging, request IDs, and performance index ([#70](https://github.com/unstable-studios/dotrc/issues/70)) ([d78ef50](https://github.com/unstable-studios/dotrc/commit/d78ef503297e5fd98c21795f00ebde3c0cc5545d))
+* **worker:** implement Slack integration adapter ([#73](https://github.com/unstable-studios/dotrc/issues/73)) ([2ae5164](https://github.com/unstable-studios/dotrc/commit/2ae5164a489cfa594b5594227a5d7971df97c95b))
+* **worker:** security hardening for production readiness ([#69](https://github.com/unstable-studios/dotrc/issues/69)) ([93e161e](https://github.com/unstable-studios/dotrc/commit/93e161eea956f26c2a6fb5deeee0b8ceef388e08))
+
 ## [1.2.0](https://github.com/unstable-studios/dotrc/compare/dotrc-worker-v1.1.0...dotrc-worker-v1.2.0) (2026-02-09)
 
 
