@@ -65,3 +65,6 @@ jobs:
 
       - name: Test
         run: pnpm --filter dotrc-worker test
+
+      - name: Integration test
+        run: pnpm --filter dotrc-worker run test:integration
