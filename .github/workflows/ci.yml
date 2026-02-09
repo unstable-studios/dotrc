@@ -75,5 +75,14 @@ jobs:
       - name: Integration test
         run: pnpm --filter dotrc-worker run test:integration
 
+      - name: Type check (web)
+        run: pnpm --filter dotrc-web run typecheck
+
+      - name: Test (web)
+        run: pnpm --filter dotrc-web test
+
       - name: Build SDK
         run: pnpm --filter dotrc-sdk run build
+
+      - name: Build web
+        run: pnpm --filter dotrc-web run build
