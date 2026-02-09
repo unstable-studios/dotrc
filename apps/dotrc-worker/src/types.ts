@@ -124,6 +124,30 @@ export interface LinkGrants {
   to: VisibilityGrant[];
 }
 
+// Integration types
+
+export interface Integration {
+  id: string;
+  tenant_id: TenantId;
+  provider: string;
+  workspace_id: string;
+  created_at: Timestamp;
+}
+
+export interface ExternalIdentity {
+  user_id: UserId;
+  integration_id: string;
+  external_user_id: string;
+  display_name: string;
+  linked_at: Timestamp;
+}
+
+export interface ScopeMembership {
+  scope_id: ScopeId;
+  user_id: UserId;
+  joined_at: Timestamp;
+}
+
 // Error handling utilities
 
 /**

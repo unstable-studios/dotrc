@@ -9,6 +9,13 @@ import {
   parsePaginationParams,
   ALLOWED_MIME_TYPES,
 } from "./utils";
+import { verifySlackSignature } from "./slack-verify";
+import {
+  processSlackEvent,
+  processSlashCommand,
+  type SlackEventWrapper,
+  type SlackSlashCommand,
+} from "./slack";
 import { createLogger } from "./logger";
 import type { Logger } from "./logger";
 import {
@@ -56,6 +63,11 @@ interface Env {
   JWT_ISSUER?: string;
   JWT_HS256_SECRET?: string;
   JWT_CLOCK_SKEW_SECONDS?: string;
+  // Slack integration
+  SLACK_SIGNING_SECRET?: string;
+  SLACK_BOT_TOKEN?: string;
+  SLACK_CLIENT_ID?: string;
+  SLACK_CLIENT_SECRET?: string;
 }
 
 // Initialize WASM core wrapper (bundler target auto-initializes on import)
@@ -1660,6 +1672,333 @@ async function handleRequest(
       const allOk = results.every((r) => r.status === "ok");
       const status = allOk ? 201 : anyOk ? 207 : 400;
       return json(status, { results });
+    }
+
+    // POST /slack/events - Slack Events API webhook
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "slack" &&
+      segments[1] === "events"
+    ) {
+      if (!env.SLACK_SIGNING_SECRET) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Slack integration not configured",
+        });
+      }
+
+      // Read raw body for signature verification
+      const rawBody = await request.text();
+      const signature = request.headers.get("x-slack-signature") || "";
+      const timestamp = request.headers.get("x-slack-request-timestamp") || "";
+
+      const valid = await verifySlackSignature(
+        env.SLACK_SIGNING_SECRET,
+        signature,
+        timestamp,
+        rawBody,
+      );
+      if (!valid) {
+        logger.warn("slack.signature_invalid");
+        return json(401, {
+          error: "unauthorized",
+          detail: "Invalid Slack signature",
+        });
+      }
+
+      let payload: SlackEventWrapper;
+      try {
+        payload = JSON.parse(rawBody) as SlackEventWrapper;
+      } catch {
+        return json(400, {
+          error: "invalid_json",
+          detail: "Failed to parse Slack event",
+        });
+      }
+
+      // Handle URL verification challenge
+      if (payload.type === "url_verification" && payload.challenge) {
+        return json(200, { challenge: payload.challenge });
+      }
+
+      // Process event_callback
+      if (payload.type === "event_callback" && payload.event && payload.team_id) {
+        if (!env.DB) {
+          return json(503, {
+            error: "service_unavailable",
+            detail: "Database not configured",
+          });
+        }
+
+        try {
+          const storage = new D1DotStorage(env.DB);
+          const result = await processSlackEvent(
+            payload.event,
+            payload.team_id,
+            storage,
+            core,
+            generateDotId,
+            now,
+            logger,
+          );
+
+          if (result) {
+            return json(200, { ok: true, dot_id: result.dotId });
+          }
+          return json(200, { ok: true, skipped: true });
+        } catch (err: unknown) {
+          logger.error("slack.event_processing_failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          // Return 200 to Slack to prevent retries on internal errors
+          return json(200, { ok: false, error: "processing_failed" });
+        }
+      }
+
+      return json(200, { ok: true });
+    }
+
+    // POST /slack/commands - Slack slash command handler
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "slack" &&
+      segments[1] === "commands"
+    ) {
+      if (!env.SLACK_SIGNING_SECRET) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Slack integration not configured",
+        });
+      }
+
+      const rawBody = await request.text();
+      const signature = request.headers.get("x-slack-signature") || "";
+      const timestamp = request.headers.get("x-slack-request-timestamp") || "";
+
+      const valid = await verifySlackSignature(
+        env.SLACK_SIGNING_SECRET,
+        signature,
+        timestamp,
+        rawBody,
+      );
+      if (!valid) {
+        logger.warn("slack.command_signature_invalid");
+        return json(401, {
+          error: "unauthorized",
+          detail: "Invalid Slack signature",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      // Parse URL-encoded form data
+      const params = new URLSearchParams(rawBody);
+      const command: SlackSlashCommand = {
+        command: params.get("command") || "",
+        text: params.get("text") || "",
+        user_id: params.get("user_id") || "",
+        user_name: params.get("user_name") || "",
+        team_id: params.get("team_id") || "",
+        channel_id: params.get("channel_id") || "",
+        channel_name: params.get("channel_name") || "",
+        response_url: params.get("response_url") || "",
+        trigger_id: params.get("trigger_id") || "",
+      };
+
+      if (!command.team_id || !command.user_id) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Missing team_id or user_id",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const result = await processSlashCommand(
+          command,
+          storage,
+          core,
+          generateDotId,
+          now,
+          logger,
+        );
+        return json(200, result);
+      } catch (err: unknown) {
+        logger.error("slack.command_failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return json(200, {
+          response_type: "ephemeral",
+          text: "Something went wrong. Please try again.",
+        });
+      }
+    }
+
+    // GET /slack/install - Redirect to Slack OAuth
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "slack" &&
+      segments[1] === "install"
+    ) {
+      if (!env.SLACK_CLIENT_ID) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Slack OAuth not configured",
+        });
+      }
+
+      const scopes = [
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "commands",
+        "groups:history",
+        "groups:read",
+        "users:read",
+      ].join(",");
+
+      const installUrl = `https://slack.com/oauth/v2/authorize?client_id=${encodeURIComponent(env.SLACK_CLIENT_ID)}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(url.origin + "/slack/oauth_redirect")}`;
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: installUrl,
+          ...SECURITY_HEADERS,
+        },
+      });
+    }
+
+    // GET /slack/oauth_redirect - Handle OAuth callback
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "slack" &&
+      segments[1] === "oauth_redirect"
+    ) {
+      if (!env.SLACK_CLIENT_ID || !env.SLACK_CLIENT_SECRET) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Slack OAuth not configured",
+        });
+      }
+
+      const code = url.searchParams.get("code");
+      const error = url.searchParams.get("error");
+
+      if (error) {
+        logger.warn("slack.oauth_denied", { error });
+        return json(400, {
+          error: "oauth_denied",
+          detail: `Slack OAuth was denied: ${error}`,
+        });
+      }
+
+      if (!code) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Missing OAuth code",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      // Exchange code for token
+      let oauthResponse: Response;
+      try {
+        oauthResponse = await fetch("https://slack.com/api/oauth.v2.access", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: env.SLACK_CLIENT_ID,
+            client_secret: env.SLACK_CLIENT_SECRET,
+            code,
+            redirect_uri: url.origin + "/slack/oauth_redirect",
+          }).toString(),
+        });
+      } catch (err: unknown) {
+        logger.error("slack.oauth_exchange_failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to exchange OAuth code",
+        });
+      }
+
+      const oauthData = (await oauthResponse.json()) as {
+        ok: boolean;
+        team?: { id: string; name: string };
+        error?: string;
+      };
+
+      if (!oauthData.ok || !oauthData.team) {
+        logger.warn("slack.oauth_failed", { error: oauthData.error });
+        return json(400, {
+          error: "oauth_failed",
+          detail: `Slack OAuth failed: ${oauthData.error || "unknown"}`,
+        });
+      }
+
+      // Create or find integration + tenant
+      const storage = new D1DotStorage(env.DB);
+      const existing = await storage.getIntegrationByWorkspace(
+        "slack",
+        oauthData.team.id,
+      );
+
+      if (existing) {
+        logger.info("slack.oauth_existing", {
+          integrationId: existing.id,
+          teamId: oauthData.team.id,
+        });
+        return json(200, {
+          ok: true,
+          message: "Workspace already connected",
+          integration_id: existing.id,
+          tenant_id: existing.tenant_id,
+        });
+      }
+
+      // Create new tenant and integration
+      const timestamp = now();
+      const tenantId = `slack-${oauthData.team.id}`;
+      const integrationId = `int-${crypto.randomUUID()}`;
+
+      await storage.ensureTenant(tenantId, timestamp);
+      await storage.storeIntegration({
+        id: integrationId,
+        tenant_id: tenantId,
+        provider: "slack",
+        workspace_id: oauthData.team.id,
+        created_at: timestamp,
+      });
+
+      logger.info("slack.oauth_success", {
+        integrationId,
+        tenantId,
+        teamId: oauthData.team.id,
+        teamName: oauthData.team.name,
+      });
+
+      return json(201, {
+        ok: true,
+        message: "Workspace connected successfully",
+        integration_id: integrationId,
+        tenant_id: tenantId,
+      });
     }
 
     return json(404, { error: "not_found", path: url.pathname });
