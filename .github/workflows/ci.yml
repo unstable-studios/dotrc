@@ -60,11 +60,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type check
+      - name: Type check (worker)
         run: pnpm --filter dotrc-worker run typecheck
 
-      - name: Test
+      - name: Type check (SDK)
+        run: pnpm --filter dotrc-sdk run typecheck
+
+      - name: Test (worker)
         run: pnpm --filter dotrc-worker test
+
+      - name: Test (SDK)
+        run: pnpm --filter dotrc-sdk test
 
       - name: Integration test
         run: pnpm --filter dotrc-worker run test:integration
+
+      - name: Build SDK
+        run: pnpm --filter dotrc-sdk run build
