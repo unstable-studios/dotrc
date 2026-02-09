@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/unstable-studios/dotrc/compare/dotrc-server-v0.1.0...dotrc-server-v0.2.0) (2026-02-09)
+
+
+### Features
+
+* **server:** implement self-hosted Rust HTTP server ([#74](https://github.com/unstable-studios/dotrc/issues/74)) ([483188d](https://github.com/unstable-studios/dotrc/commit/483188dd583f9e0800ab8b153bd3bdbeb9899edc))
+
 ## [0.1.0](https://github.com/unstable-studios/dotrc/compare/dotrc-server-v0.1.0...dotrc-server-v0.1.0) (2025-12-21)
 
 
