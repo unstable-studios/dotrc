@@ -514,29 +514,37 @@ export class D1DotStorage implements DotStorage {
   }
 
   /**
-   * Get an attachment reference by ID.
+   * Get an attachment reference by ID, scoped to a specific tenant.
+   * JOINs with dots to enforce tenant isolation.
    * Returns the attachment metadata and its parent dot_id.
    */
   async getAttachmentRef(
-    attachmentId: string
+    attachmentId: string,
+    tenantId?: TenantId
   ): Promise<(AttachmentRef & { dot_id: DotId }) | null> {
-    const result = await this.db
-      .prepare(
-        `SELECT id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at
+    const query = tenantId
+      ? `SELECT ar.id, ar.dot_id, ar.filename, ar.mime_type, ar.size_bytes, ar.content_hash, ar.storage_key, ar.created_at
+         FROM attachment_refs ar
+         JOIN dots d ON ar.dot_id = d.id
+         WHERE ar.id = ? AND d.tenant_id = ?`
+      : `SELECT id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at
          FROM attachment_refs
-         WHERE id = ?`
-      )
-      .bind(attachmentId)
-      .first<{
-        id: string;
-        dot_id: string;
-        filename: string;
-        mime_type: string;
-        size_bytes: number;
-        content_hash: string;
-        storage_key: string | null;
-        created_at: string;
-      }>();
+         WHERE id = ?`;
+
+    const stmt = tenantId
+      ? this.db.prepare(query).bind(attachmentId, tenantId)
+      : this.db.prepare(query).bind(attachmentId);
+
+    const result = await stmt.first<{
+      id: string;
+      dot_id: string;
+      filename: string;
+      mime_type: string;
+      size_bytes: number;
+      content_hash: string;
+      storage_key: string | null;
+      created_at: string;
+    }>();
 
     if (!result) return null;
 

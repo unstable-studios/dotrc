@@ -491,4 +491,97 @@ describe("D1DotStorage integration", () => {
       ).rejects.toThrow();
     });
   });
+
+  describe("tenant-scoped attachment lookup", () => {
+    it("returns attachment when queried with correct tenant", async () => {
+      const tenantId = `tenant-att-scope-${crypto.randomUUID()}`;
+      const userId = `user-att-scope-${crypto.randomUUID()}`;
+      const dot = makeDot({ tenant_id: tenantId, created_by: userId });
+      await storage.ensureEntities(
+        { dot, grants: [makeGrant(dot.id, userId)], links: [] },
+        dot.created_at
+      );
+      await storage.storeDot({
+        dot,
+        grants: [makeGrant(dot.id, userId)],
+        links: [],
+      });
+
+      const attId = `att-${crypto.randomUUID()}`;
+      await storage.storeAttachmentRef(dot.id, {
+        id: attId,
+        filename: "scoped.txt",
+        mime_type: "text/plain",
+        size_bytes: 100,
+        content_hash: "sha256:abc",
+        storage_key: `${tenantId}/${dot.id}/uuid/scoped.txt`,
+        created_at: dot.created_at,
+      });
+
+      // Same tenant — should find it
+      const ref = await storage.getAttachmentRef(attId, tenantId);
+      expect(ref).not.toBeNull();
+      expect(ref!.id).toBe(attId);
+    });
+
+    it("returns null when queried with wrong tenant", async () => {
+      const tenantId = `tenant-att-wrong-${crypto.randomUUID()}`;
+      const userId = `user-att-wrong-${crypto.randomUUID()}`;
+      const dot = makeDot({ tenant_id: tenantId, created_by: userId });
+      await storage.ensureEntities(
+        { dot, grants: [makeGrant(dot.id, userId)], links: [] },
+        dot.created_at
+      );
+      await storage.storeDot({
+        dot,
+        grants: [makeGrant(dot.id, userId)],
+        links: [],
+      });
+
+      const attId = `att-${crypto.randomUUID()}`;
+      await storage.storeAttachmentRef(dot.id, {
+        id: attId,
+        filename: "hidden.txt",
+        mime_type: "text/plain",
+        size_bytes: 100,
+        content_hash: "sha256:def",
+        storage_key: `${tenantId}/${dot.id}/uuid/hidden.txt`,
+        created_at: dot.created_at,
+      });
+
+      // Wrong tenant — should NOT find it
+      const ref = await storage.getAttachmentRef(attId, "wrong-tenant");
+      expect(ref).toBeNull();
+    });
+
+    it("still works without tenant parameter (backward compatible)", async () => {
+      const tenantId = `tenant-att-compat-${crypto.randomUUID()}`;
+      const userId = `user-att-compat-${crypto.randomUUID()}`;
+      const dot = makeDot({ tenant_id: tenantId, created_by: userId });
+      await storage.ensureEntities(
+        { dot, grants: [makeGrant(dot.id, userId)], links: [] },
+        dot.created_at
+      );
+      await storage.storeDot({
+        dot,
+        grants: [makeGrant(dot.id, userId)],
+        links: [],
+      });
+
+      const attId = `att-${crypto.randomUUID()}`;
+      await storage.storeAttachmentRef(dot.id, {
+        id: attId,
+        filename: "compat.txt",
+        mime_type: "text/plain",
+        size_bytes: 50,
+        content_hash: "sha256:ghi",
+        storage_key: `${tenantId}/${dot.id}/uuid/compat.txt`,
+        created_at: dot.created_at,
+      });
+
+      // No tenant parameter — should find it
+      const ref = await storage.getAttachmentRef(attId);
+      expect(ref).not.toBeNull();
+    });
+  });
 });

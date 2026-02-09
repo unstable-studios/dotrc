@@ -96,3 +96,48 @@ export function parseScopeMemberships(request: Request): string[] {
   // TODO: Fetch from Slack API or session
   return [];
 }
+
+/**
+ * Parse and clamp pagination parameters from URL search params.
+ * - limit: clamped to [1, 100], defaults to 50
+ * - offset: clamped to [0, ∞), defaults to 0
+ */
+export function parsePaginationParams(url: URL): {
+  limit: number;
+  offset: number;
+} {
+  const rawLimit = url.searchParams.get("limit") || "50";
+  const rawOffset = url.searchParams.get("offset") || "0";
+  const limit = Math.min(Math.max(1, parseInt(rawLimit, 10) || 50), 100);
+  const offset = Math.max(0, parseInt(rawOffset, 10) || 0);
+  return { limit, offset };
+}
+
+/**
+ * Allowed MIME types for attachment uploads.
+ */
+export const ALLOWED_MIME_TYPES = new Set([
+  // Documents
+  "application/pdf",
+  "application/json",
+  "text/plain",
+  "text/csv",
+  "text/markdown",
+  "application/xml",
+  "text/xml",
+  // Images
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  // Archives
+  "application/zip",
+  "application/gzip",
+  // Office
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  // Fallback
+  "application/octet-stream",
+]);

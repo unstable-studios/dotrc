@@ -2,7 +2,13 @@ import { DotrcCore } from "./core";
 import type { DotrcWasm } from "./core";
 import type { DotDraft, AuthContext, LinkType } from "./types";
 import { DotrcError } from "./types";
-import { generateDotId, generateAttachmentId, now } from "./utils";
+import {
+  generateDotId,
+  generateAttachmentId,
+  now,
+  parsePaginationParams,
+  ALLOWED_MIME_TYPES,
+} from "./utils";
 import {
   resolveAuthContext,
   JWTProvider,
@@ -40,6 +46,8 @@ interface Env {
   DB?: D1Database;
   // R2 bucket binding for attachment storage
   ATTACHMENTS?: R2Bucket;
+  // Environment (e.g., "production", "staging", "development")
+  ENVIRONMENT?: string;
   // JWT configuration
   JWT_JWKS_URL?: string;
   JWT_AUDIENCE?: string;
@@ -51,6 +59,12 @@ interface Env {
 // Initialize WASM core wrapper (bundler target auto-initializes on import)
 const core = new DotrcCore(wasm as DotrcWasm);
 
+const SECURITY_HEADERS: Record<string, string> = {
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "referrer-policy": "strict-origin-when-cross-origin",
+};
+
 function json(
   status: number,
   body: JsonSerializable,
@@ -60,6 +74,7 @@ function json(
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
+      ...SECURITY_HEADERS,
       ...headers,
     },
   });
@@ -97,7 +112,7 @@ async function getAuthContext(
 
   // Configure auth providers in order of preference
   // Production: Cloudflare Access → JWT → Trusted Headers
-  // Development: Add DevelopmentProvider for local testing
+  // Non-production: Also add DevelopmentProvider for local testing
   const authProviders: AuthProvider[] = [
     new CloudflareAccessProvider(),
     new JWTProvider({
@@ -108,8 +123,11 @@ async function getAuthContext(
       clockToleranceSeconds: validClockSkew,
     }),
     new TrustedHeaderProvider(),
-    new DevelopmentProvider(),
   ];
+
+  if (env.ENVIRONMENT !== "production") {
+    authProviders.push(new DevelopmentProvider());
+  }
 
   return await resolveAuthContext(request, authProviders);
 }
@@ -354,9 +372,7 @@ export default {
       }
 
       try {
-        const url = new URL(request.url);
-        const limit = parseInt(url.searchParams.get("limit") || "50", 10);
-        const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+        const { limit, offset } = parsePaginationParams(url);
 
         const storage = new D1DotStorage(env.DB);
         const result = await storage.listDotsForUser({
@@ -965,6 +981,15 @@ export default {
           });
         }
 
+        // Validate MIME type against allowlist
+        const mimeType = file.type || "application/octet-stream";
+        if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+          return json(400, {
+            error: "invalid_body",
+            detail: `Unsupported file type '${mimeType}'. Allowed types: ${Array.from(ALLOWED_MIME_TYPES).join(", ")}`,
+          });
+        }
+
         const timestamp = now();
         const attachmentId = generateAttachmentId();
         const fileData = new Uint8Array(await file.arrayBuffer());
@@ -1056,7 +1081,10 @@ export default {
 
       try {
         const storage = new D1DotStorage(env.DB);
-        const attachmentRef = await storage.getAttachmentRef(attachmentId);
+        const attachmentRef = await storage.getAttachmentRef(
+          attachmentId,
+          authContext.tenant_id
+        );
 
         if (!attachmentRef) {
           return json(404, {
@@ -1126,6 +1154,7 @@ export default {
             "content-type": attachmentData.contentType,
             "content-length": String(attachmentData.sizeBytes),
             "content-disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
+            ...SECURITY_HEADERS,
           },
         });
       } catch (err: unknown) {
