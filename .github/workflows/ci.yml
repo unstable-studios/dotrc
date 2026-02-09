@@ -66,23 +66,23 @@ jobs:
       - name: Type check (SDK)
         run: pnpm --filter dotrc-sdk run typecheck
 
-      - name: Type check (dotrc)
-        run: pnpm --filter dotrc run typecheck
-
       - name: Test (worker)
         run: pnpm --filter dotrc-worker test
 
       - name: Test (SDK)
         run: pnpm --filter dotrc-sdk test
 
-      - name: Test (dotrc)
-        run: pnpm --filter dotrc test
-
       - name: Integration test
         run: pnpm --filter dotrc-worker run test:integration
 
       - name: Build SDK
         run: pnpm --filter dotrc-sdk run build
+
+      - name: Type check (dotrc)
+        run: pnpm --filter dotrc run typecheck
+
+      - name: Test (dotrc)
+        run: pnpm --filter dotrc test
 
       - name: Build dotrc
         run: pnpm --filter dotrc run build
