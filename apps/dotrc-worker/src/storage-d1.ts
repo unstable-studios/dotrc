@@ -483,6 +483,76 @@ export class D1DotStorage implements DotStorage {
   }
 
   /**
+   * Store an attachment reference in D1 (metadata only — file data is in R2).
+   */
+  async storeAttachmentRef(
+    dotId: DotId,
+    attachment: AttachmentRef
+  ): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO attachment_refs (
+          id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        attachment.id,
+        dotId,
+        attachment.filename,
+        attachment.mime_type,
+        attachment.size_bytes,
+        attachment.content_hash,
+        attachment.storage_key || null,
+        attachment.created_at
+      )
+      .run();
+    if (!result.success) {
+      throw new Error(
+        `Failed to store attachment ref ${attachment.id}: ${result.error}`
+      );
+    }
+  }
+
+  /**
+   * Get an attachment reference by ID.
+   * Returns the attachment metadata and its parent dot_id.
+   */
+  async getAttachmentRef(
+    attachmentId: string
+  ): Promise<(AttachmentRef & { dot_id: DotId }) | null> {
+    const result = await this.db
+      .prepare(
+        `SELECT id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at
+         FROM attachment_refs
+         WHERE id = ?`
+      )
+      .bind(attachmentId)
+      .first<{
+        id: string;
+        dot_id: string;
+        filename: string;
+        mime_type: string;
+        size_bytes: number;
+        content_hash: string;
+        storage_key: string | null;
+        created_at: string;
+      }>();
+
+    if (!result) return null;
+
+    return {
+      id: result.id,
+      dot_id: result.dot_id,
+      filename: result.filename,
+      mime_type: result.mime_type,
+      size_bytes: result.size_bytes,
+      content_hash: result.content_hash,
+      storage_key: result.storage_key || undefined,
+      created_at: result.created_at,
+    };
+  }
+
+  /**
    * List dots visible to a user (based on grants).
    * Returns paginated results.
    */

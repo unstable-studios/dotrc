@@ -2,7 +2,7 @@ import { DotrcCore } from "./core";
 import type { DotrcWasm } from "./core";
 import type { DotDraft, AuthContext, LinkType } from "./types";
 import { DotrcError } from "./types";
-import { generateDotId, now } from "./utils";
+import { generateDotId, generateAttachmentId, now } from "./utils";
 import {
   resolveAuthContext,
   JWTProvider,
@@ -33,7 +33,7 @@ export type JsonArray = JsonValue[];
 export type JsonSerializable = JsonValue | { [key: string]: any } | any[];
 
 import { D1DotStorage, type D1Database } from "./storage-d1";
-import { type R2Bucket } from "./storage-r2";
+import { R2AttachmentStorage, type R2Bucket } from "./storage-r2";
 
 interface Env {
   // D1 database binding for persistence
@@ -824,6 +824,729 @@ export default {
           detail: "Failed to retrieve links",
         });
       }
+    }
+
+    // POST /dots/:dotId/attachments - Upload an attachment
+    if (
+      request.method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "dots" &&
+      segments[2] === "attachments"
+    ) {
+      const dotId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      if (!env.ATTACHMENTS) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Attachment storage not configured",
+        });
+      }
+
+      // Early size check via Content-Length header (before buffering the body)
+      const contentLength = request.headers.get("content-length");
+      const maxSize = 10 * 1024 * 1024;
+      if (contentLength && parseInt(contentLength, 10) > maxSize) {
+        return json(413, {
+          error: "file_too_large",
+          detail: `File exceeds maximum size of ${maxSize} bytes`,
+        });
+      }
+
+      // Parse multipart form data
+      const reqContentType = request.headers.get("content-type") || "";
+      if (!reqContentType.includes("multipart/form-data")) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected multipart/form-data",
+        });
+      }
+
+      let formData: FormData;
+      try {
+        formData = await request.formData();
+      } catch (err) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Failed to parse multipart form data",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const dot = await storage.getDot(authContext.tenant_id, dotId);
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Dot not found",
+          });
+        }
+
+        // Only the creator can add attachments
+        if (dot.created_by !== authContext.requesting_user) {
+          return json(403, {
+            error: "forbidden",
+            detail: "Only the dot creator can add attachments",
+          });
+        }
+
+        // Enforce max attachments limit (aligned with core MAX_ATTACHMENTS = 10)
+        const MAX_ATTACHMENTS = 10;
+        if (dot.attachments.length >= MAX_ATTACHMENTS) {
+          return json(400, {
+            error: "validation_failed",
+            detail: `Dot already has the maximum number of attachments (${MAX_ATTACHMENTS})`,
+          });
+        }
+
+        const fileEntry = formData.get("file");
+
+        if (!fileEntry || typeof fileEntry === "string") {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Missing 'file' field in form data",
+          });
+        }
+
+        const file = fileEntry as unknown as {
+          name: string;
+          type: string;
+          size: number;
+          arrayBuffer(): Promise<ArrayBuffer>;
+        };
+
+        // Size limit: 10MB
+        if (file.size > maxSize) {
+          return json(413, {
+            error: "file_too_large",
+            detail: `File exceeds maximum size of ${maxSize} bytes`,
+          });
+        }
+
+        // Validate filename
+        if (!file.name || file.name.trim().length === 0) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename is required",
+          });
+        }
+        if (file.name.length > 255) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename exceeds maximum length of 255 characters",
+          });
+        }
+        if (/[\/\\]/.test(file.name)) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename must not contain path separators",
+          });
+        }
+        // eslint-disable-next-line no-control-regex
+        if (/[\x00-\x1f\x7f]/.test(file.name)) {
+          return json(400, {
+            error: "invalid_body",
+            detail: "Filename must not contain control characters",
+          });
+        }
+
+        const timestamp = now();
+        const attachmentId = generateAttachmentId();
+        const fileData = new Uint8Array(await file.arrayBuffer());
+
+        // Compute content hash
+        const hashBuffer = await crypto.subtle.digest("SHA-256", fileData);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const contentHash =
+          "sha256:" +
+          hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+        // Upload to R2
+        const r2Storage = new R2AttachmentStorage(env.ATTACHMENTS);
+        const storageKey = await r2Storage.uploadAttachment({
+          tenantId: authContext.tenant_id,
+          dotId,
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          data: fileData,
+        });
+
+        // Store metadata in D1 (including R2 storage key for retrieval)
+        // On failure, clean up the R2 object to prevent orphans
+        try {
+          await storage.storeAttachmentRef(dotId, {
+            id: attachmentId,
+            filename: file.name,
+            mime_type: file.type || "application/octet-stream",
+            size_bytes: file.size,
+            content_hash: contentHash,
+            storage_key: storageKey,
+            created_at: timestamp,
+          });
+        } catch (metadataErr) {
+          // Best-effort cleanup of orphaned R2 object
+          try {
+            await r2Storage.deleteAttachment(storageKey);
+          } catch {
+            // Swallow cleanup error — the original error is more important
+          }
+          throw metadataErr;
+        }
+
+        return json(201, {
+          attachment_id: attachmentId,
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size,
+          content_hash: contentHash,
+          created_at: timestamp,
+        });
+      } catch (err: unknown) {
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to upload attachment",
+        });
+      }
+    }
+
+    // GET /attachments/:attachmentId - Download an attachment
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "attachments"
+    ) {
+      const attachmentId = segments[1];
+
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      if (!env.ATTACHMENTS) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Attachment storage not configured",
+        });
+      }
+
+      try {
+        const storage = new D1DotStorage(env.DB);
+        const attachmentRef = await storage.getAttachmentRef(attachmentId);
+
+        if (!attachmentRef) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment not found",
+          });
+        }
+
+        // Check if user can view the parent dot
+        const dot = await storage.getDot(
+          authContext.tenant_id,
+          attachmentRef.dot_id
+        );
+
+        if (!dot) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment not found",
+          });
+        }
+
+        const grants = await storage.getGrants(
+          authContext.tenant_id,
+          attachmentRef.dot_id
+        );
+        const canView =
+          dot.created_by === authContext.requesting_user ||
+          grants.some((g) => g.user_id === authContext.requesting_user);
+
+        if (!canView) {
+          return json(403, {
+            error: "forbidden",
+            detail: "You do not have permission to view this attachment",
+          });
+        }
+
+        if (!attachmentRef.storage_key) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment storage key not available",
+          });
+        }
+
+        const r2Storage = new R2AttachmentStorage(env.ATTACHMENTS);
+        const attachmentData = await r2Storage.getAttachment(
+          attachmentRef.storage_key
+        );
+
+        if (!attachmentData) {
+          return json(404, {
+            error: "not_found",
+            detail: "Attachment file not found in storage",
+          });
+        }
+
+        // Sanitize filename for Content-Disposition header to prevent injection
+        const safeFilename = attachmentRef.filename
+          .replace(/[\r\n]/g, "") // Strip CRLF
+          .replace(/"/g, '\\"'); // Escape quotes
+        // RFC 5987 encoding for UTF-8 filenames
+        const encodedFilename = encodeURIComponent(attachmentRef.filename)
+          .replace(/'/g, "%27");
+
+        return new Response(attachmentData.data, {
+          status: 200,
+          headers: {
+            "content-type": attachmentData.contentType,
+            "content-length": String(attachmentData.sizeBytes),
+            "content-disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
+          },
+        });
+      } catch (err: unknown) {
+        return json(500, {
+          error: "internal_error",
+          detail: "Failed to retrieve attachment",
+        });
+      }
+    }
+
+    // POST /batch/dots - Create multiple dots in one request
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "batch" &&
+      segments[1] === "dots"
+    ) {
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      let body: JsonValue;
+      try {
+        body = await readJson(request);
+      } catch (err) {
+        return json(400, {
+          error: "invalid_json",
+          detail: (err as Error).message,
+        });
+      }
+
+      if (!body || !Array.isArray(body)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected JSON array of dot drafts",
+        });
+      }
+
+      // Rate limit: max 50 dots per batch
+      const maxBatchSize = 50;
+      if (body.length > maxBatchSize) {
+        return json(400, {
+          error: "invalid_body",
+          detail: `Batch size exceeds maximum of ${maxBatchSize}`,
+        });
+      }
+
+      if (body.length === 0) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Batch must contain at least one dot draft",
+        });
+      }
+
+      const storage = new D1DotStorage(env.DB);
+
+      // Phase 1: Validate all items and build drafts before any writes
+      const validDrafts: Array<{
+        index: number;
+        draft: DotDraft;
+      }> = [];
+      const validationErrors: Array<{
+        index: number;
+        status: "error";
+        error: string;
+      }> = [];
+
+      for (let i = 0; i < body.length; i++) {
+        const item = body[i];
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          validationErrors.push({
+            index: i,
+            status: "error",
+            error: "Expected JSON object",
+          });
+          continue;
+        }
+
+        const payload = item as Record<string, JsonValue>;
+        const title =
+          typeof payload.title === "string" ? payload.title.trim() : "";
+        if (!title) {
+          validationErrors.push({
+            index: i,
+            status: "error",
+            error: "Missing or empty 'title' field",
+          });
+          continue;
+        }
+
+        validDrafts.push({
+          index: i,
+          draft: {
+            title,
+            body: typeof payload.body === "string" ? payload.body : undefined,
+            created_by: authContext.requesting_user,
+            tenant_id: authContext.tenant_id,
+            scope_id:
+              typeof payload.scope_id === "string"
+                ? payload.scope_id
+                : undefined,
+            tags: Array.isArray(payload.tags)
+              ? payload.tags.filter((t): t is string => typeof t === "string")
+              : [],
+            visible_to_users: Array.isArray(payload.visible_to_users)
+              ? payload.visible_to_users.filter(
+                  (u): u is string => typeof u === "string"
+                )
+              : [authContext.requesting_user],
+            visible_to_scopes: Array.isArray(payload.visible_to_scopes)
+              ? payload.visible_to_scopes.filter(
+                  (s): s is string => typeof s === "string"
+                )
+              : [],
+            attachments: [],
+          },
+        });
+      }
+
+      // Phase 2: Call core for all valid drafts and collect entities to ensure
+      const coreResults: Array<{
+        index: number;
+        result: ReturnType<typeof core.createDot>;
+        timestamp: string;
+      }> = [];
+      const coreErrors: typeof validationErrors = [];
+      const allUserIds = new Set<string>();
+      const allScopeIds = new Set<string>();
+
+      for (const { index, draft } of validDrafts) {
+        try {
+          const timestamp = now();
+          const dotId = generateDotId();
+          const result = core.createDot(draft, timestamp, dotId);
+
+          // Collect entities for batch ensure
+          allUserIds.add(result.dot.created_by);
+          if (result.dot.scope_id) allScopeIds.add(result.dot.scope_id);
+          for (const grant of result.grants) {
+            if (grant.user_id) allUserIds.add(grant.user_id);
+            if (grant.scope_id) allScopeIds.add(grant.scope_id);
+            if (grant.granted_by) allUserIds.add(grant.granted_by);
+          }
+
+          coreResults.push({ index, result, timestamp });
+        } catch (err: unknown) {
+          const isClientError =
+            err instanceof DotrcError &&
+            (err.kind === "Validation" || err.kind === "Authorization");
+          coreErrors.push({
+            index,
+            status: "error",
+            error: isClientError
+              ? (err as DotrcError).message
+              : "Failed to create dot",
+          });
+        }
+      }
+
+      // Phase 3: Ensure all entities once (deduplicated across the batch)
+      if (coreResults.length > 0) {
+        const batchTimestamp = now();
+        await storage.ensureTenant(authContext.tenant_id, batchTimestamp);
+        await Promise.all([
+          ...Array.from(allUserIds).map((uid) =>
+            storage.ensureUser(uid, authContext.tenant_id, batchTimestamp)
+          ),
+          ...Array.from(allScopeIds).map((sid) =>
+            storage.ensureScope(sid, authContext.tenant_id, batchTimestamp)
+          ),
+        ]);
+      }
+
+      // Phase 4: Store all dots
+      const storeResults: Array<{
+        index: number;
+        status: "ok" | "error";
+        dot_id?: string;
+        created_at?: string;
+        grants_count?: number;
+        error?: string;
+      }> = [];
+
+      for (const { index, result } of coreResults) {
+        try {
+          await storage.storeDot({
+            dot: result.dot,
+            grants: result.grants,
+            links: result.links,
+          });
+
+          storeResults.push({
+            index,
+            status: "ok",
+            dot_id: result.dot.id,
+            created_at: result.dot.created_at,
+            grants_count: result.grants.length,
+          });
+        } catch (err: unknown) {
+          storeResults.push({
+            index,
+            status: "error",
+            error: "Failed to create dot",
+          });
+        }
+      }
+
+      // Merge all results and sort by index
+      const results = [
+        ...validationErrors,
+        ...coreErrors,
+        ...storeResults,
+      ].sort((a, b) => a.index - b.index);
+
+      const anyOk = results.some((r) => r.status === "ok");
+      const allOk = results.every((r) => r.status === "ok");
+      const status = allOk ? 201 : anyOk ? 207 : 400;
+      return json(status, { results });
+    }
+
+    // POST /batch/grants - Grant access to multiple dots in one request
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "batch" &&
+      segments[1] === "grants"
+    ) {
+      const authContext = await getAuthContext(request, env);
+      if (!authContext) {
+        return json(401, {
+          error: "unauthorized",
+          detail: "No valid authentication provided",
+        });
+      }
+
+      if (!env.DB) {
+        return json(503, {
+          error: "service_unavailable",
+          detail: "Database not configured",
+        });
+      }
+
+      let body: JsonValue;
+      try {
+        body = await readJson(request);
+      } catch (err) {
+        return json(400, {
+          error: "invalid_json",
+          detail: (err as Error).message,
+        });
+      }
+
+      if (!body || !Array.isArray(body)) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Expected JSON array of grant requests",
+        });
+      }
+
+      // Rate limit: max 50 grant operations per batch
+      const maxBatchSize = 50;
+      if (body.length > maxBatchSize) {
+        return json(400, {
+          error: "invalid_body",
+          detail: `Batch size exceeds maximum of ${maxBatchSize}`,
+        });
+      }
+
+      if (body.length === 0) {
+        return json(400, {
+          error: "invalid_body",
+          detail: "Batch must contain at least one grant request",
+        });
+      }
+
+      const storage = new D1DotStorage(env.DB);
+      const results: Array<{
+        index: number;
+        status: "ok" | "error";
+        dot_id?: string;
+        grants_count?: number;
+        error?: string;
+      }> = [];
+
+      // Collect all user/scope IDs to ensure once across the batch
+      const allUserIds = new Set<string>();
+      const allScopeIds = new Set<string>();
+
+      // Process each grant request
+      for (let i = 0; i < body.length; i++) {
+        const item = body[i];
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          results.push({
+            index: i,
+            status: "error",
+            error: "Expected JSON object",
+          });
+          continue;
+        }
+
+        const payload = item as Record<string, JsonValue>;
+        const dotId =
+          typeof payload.dot_id === "string" ? payload.dot_id : "";
+        const userIds = Array.isArray(payload.user_ids)
+          ? payload.user_ids.filter(
+              (u): u is string => typeof u === "string"
+            )
+          : [];
+        const scopeIds = Array.isArray(payload.scope_ids)
+          ? payload.scope_ids.filter(
+              (s): s is string => typeof s === "string"
+            )
+          : [];
+
+        if (!dotId) {
+          results.push({
+            index: i,
+            status: "error",
+            error: "Missing 'dot_id' field",
+          });
+          continue;
+        }
+
+        if (userIds.length === 0 && scopeIds.length === 0) {
+          results.push({
+            index: i,
+            status: "error",
+            error: "At least one entry in user_ids or scope_ids is required",
+          });
+          continue;
+        }
+
+        try {
+          const dot = await storage.getDot(authContext.tenant_id, dotId);
+          if (!dot) {
+            results.push({
+              index: i,
+              status: "error",
+              dot_id: dotId,
+              error: "Dot not found",
+            });
+            continue;
+          }
+
+          const existingGrants = await storage.getGrants(
+            authContext.tenant_id,
+            dotId
+          );
+
+          const timestamp = now();
+          const result = core.grantAccess(
+            dot,
+            existingGrants,
+            userIds,
+            scopeIds,
+            {
+              requesting_user: authContext.requesting_user,
+              user_scope_memberships:
+                authContext.user_scope_memberships || [],
+            },
+            timestamp
+          );
+
+          // Collect entities for deduped ensure
+          for (const grant of result.grants) {
+            if (grant.user_id) allUserIds.add(grant.user_id);
+            if (grant.scope_id) allScopeIds.add(grant.scope_id);
+          }
+
+          await storage.storeGrants(result.grants);
+
+          results.push({
+            index: i,
+            status: "ok",
+            dot_id: dotId,
+            grants_count: result.grants.length,
+          });
+        } catch (err: unknown) {
+          const isClientError =
+            err instanceof DotrcError &&
+            (err.kind === "Validation" || err.kind === "Authorization");
+          results.push({
+            index: i,
+            status: "error",
+            dot_id: dotId,
+            error: isClientError
+              ? (err as DotrcError).message
+              : "Failed to grant access",
+          });
+        }
+      }
+
+      // Ensure all referenced users/scopes exist (deduplicated across batch)
+      if (allUserIds.size > 0 || allScopeIds.size > 0) {
+        const batchTimestamp = now();
+        await storage.ensureTenant(authContext.tenant_id, batchTimestamp);
+        await Promise.all([
+          ...Array.from(allUserIds).map((uid) =>
+            storage.ensureUser(uid, authContext.tenant_id, batchTimestamp)
+          ),
+          ...Array.from(allScopeIds).map((sid) =>
+            storage.ensureScope(sid, authContext.tenant_id, batchTimestamp)
+          ),
+        ]);
+      }
+
+      const anyOk = results.some((r) => r.status === "ok");
+      const allOk = results.every((r) => r.status === "ok");
+      const status = allOk ? 201 : anyOk ? 207 : 400;
+      return json(status, { results });
     }
 
     return json(404, { error: "not_found", path: url.pathname });

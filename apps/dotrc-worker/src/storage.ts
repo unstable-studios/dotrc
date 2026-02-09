@@ -99,6 +99,11 @@ export interface AttachmentStorage {
   getAttachment(storageKey: string): Promise<AttachmentData | null>;
 
   /**
+   * Delete an attachment file by storage key.
+   */
+  deleteAttachment(storageKey: string): Promise<void>;
+
+  /**
    * Generate a signed URL for direct attachment access (optional).
    */
   getAttachmentUrl(storageKey: string, expiresIn?: number): Promise<string>;

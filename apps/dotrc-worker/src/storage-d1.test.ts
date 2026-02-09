@@ -87,15 +87,23 @@ class MockD1Database implements D1Database {
           links.push({ from_dot_id, to_dot_id, link_type, tenant_id, created_at });
           self.data.links.set(from_dot_id as string, links);
         } else if (query.includes("INSERT INTO attachment_refs")) {
-          const [id, dot_id, filename, mime_type, size_bytes, content_hash, created_at] = bindings;
+          const [id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at] = bindings;
           const attachments = self.data.attachments.get(dot_id as string) || [];
-          attachments.push({ id, dot_id, filename, mime_type, size_bytes, content_hash, created_at });
+          attachments.push({ id, dot_id, filename, mime_type, size_bytes, content_hash, storage_key, created_at });
           self.data.attachments.set(dot_id as string, attachments);
         }
 
         return { success: true, meta: {} };
       },
       async first<T = unknown>(): Promise<T | null> {
+        if (query.includes("SELECT") && query.includes("FROM attachment_refs") && query.includes("WHERE id")) {
+          const [attachmentId] = bindings;
+          for (const [, attachments] of self.data.attachments.entries()) {
+            const found = attachments.find((a: any) => a.id === attachmentId);
+            if (found) return found as T;
+          }
+          return null;
+        }
         if (query.includes("SELECT tenant_id FROM users")) {
           const [id] = bindings;
           const user = self.data.users.get(id as string);
@@ -612,6 +620,54 @@ describe("D1DotStorage", () => {
       expect(links[0].from_dot_id).toBe("dot-a");
       expect(links[0].to_dot_id).toBe("dot-b");
       expect(links[0].link_type).toBe("followup");
+    });
+  });
+
+  describe("storeAttachmentRef / getAttachmentRef", () => {
+    it("stores and retrieves an attachment ref with storage_key", async () => {
+      const dot: Dot = {
+        id: "dot-att",
+        tenant_id: "tenant-1",
+        title: "Dot with attachment",
+        created_by: "user-1",
+        created_at: "2025-12-22T00:00:00Z",
+        tags: [],
+        attachments: [],
+      };
+
+      await storage.storeDot({
+        dot,
+        grants: [
+          {
+            dot_id: "dot-att",
+            user_id: "user-1",
+            granted_at: "2025-12-22T00:00:00Z",
+          },
+        ],
+        links: [],
+      });
+
+      await storage.storeAttachmentRef("dot-att", {
+        id: "att-001",
+        filename: "report.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 2048,
+        content_hash: "sha256:abc123",
+        storage_key: "tenant-1/dot-att/uuid/report.pdf",
+        created_at: "2025-12-22T00:00:00Z",
+      });
+
+      const ref = await storage.getAttachmentRef("att-001");
+      expect(ref).not.toBeNull();
+      expect(ref!.id).toBe("att-001");
+      expect(ref!.dot_id).toBe("dot-att");
+      expect(ref!.filename).toBe("report.pdf");
+      expect(ref!.storage_key).toBe("tenant-1/dot-att/uuid/report.pdf");
+    });
+
+    it("returns null for non-existent attachment ref", async () => {
+      const ref = await storage.getAttachmentRef("nonexistent");
+      expect(ref).toBeNull();
     });
   });
 
