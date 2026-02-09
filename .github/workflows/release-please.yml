@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write
 
 jobs:
   release-please:
@@ -65,3 +66,36 @@ jobs:
         run: |
           gh release upload ${{ steps.release.outputs.tag_name }} \
             target/release/dotrc-server#dotrc-server-linux-x86_64
+
+      # Publish @unstable-studios/dotrc to GitHub Package Registry
+      - name: Install pnpm
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'packages/dotrc') }}
+        run: npm install -g pnpm
+
+      - name: Setup Node.js
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'packages/dotrc') }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JS dependencies
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'packages/dotrc') }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK (dependency)
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'packages/dotrc') }}
+        run: pnpm --filter dotrc-sdk run build
+
+      - name: Build @unstable-studios/dotrc
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'packages/dotrc') }}
+        run: pnpm --filter @unstable-studios/dotrc run build
+
+      - name: Publish @unstable-studios/dotrc
+        if: ${{ steps.release.outputs.release_created && contains(steps.release.outputs.paths_released, 'packages/dotrc') }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          pnpm --filter @unstable-studios/dotrc publish --no-git-checks
