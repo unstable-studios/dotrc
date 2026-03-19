@@ -227,6 +227,6 @@ If you feel tempted, re-read [docs/overview.md](docs/overview.md).
 
 ## License & usage
 
-- Core is licensed for reuse under <TBD>
+- Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0)
 - SaaS and enterprise offerings are built on the same engine
 - No logic forks between deployments
