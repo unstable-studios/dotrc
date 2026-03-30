@@ -1,7 +1,7 @@
 # Multi-stage build for dotrc-server
 
 # Stage 1: Build
-FROM rust:1.83-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 WORKDIR /app
 
 # Copy workspace files
