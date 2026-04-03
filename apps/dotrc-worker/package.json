@@ -17,10 +17,10 @@
     "predeploy": "pnpm run build:wasm"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20251221.0",
-    "miniflare": "^4.20260205.0",
-    "typescript": "^5.7.2",
-    "vitest": "^4.0.16",
-    "wrangler": "^4.56.0"
+    "@cloudflare/workers-types": "^4.20260403.1",
+    "miniflare": "^4.20260401.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2",
+    "wrangler": "^4.80.0"
   }
 }
